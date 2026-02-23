@@ -7,21 +7,70 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import designSystem from "./data/design-system.json" assert { type: "json" };
-import patterns from "./data/patterns.json" assert { type: "json" };
-import components from "./data/components.json" assert { type: "json" };
+// Bundled fallbacks (used when API unavailable)
+import designSystemFallback from "./data/design-system.json" assert { type: "json" };
+import patternsFallback from "./data/patterns.json" assert { type: "json" };
+import componentsFallback from "./data/components.json" assert { type: "json" };
 
-const server = new Server(
-  {
-    name: "@ruixenui/mcp",
-    version: "0.1.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
+// ─── CONFIG ──────────────────────────────────────────────────────
+
+const MCP_API_URL = process.env.RUIXEN_API_URL || "https://mcp.ruixen.com/api/mcp";
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// ─── CACHE ───────────────────────────────────────────────────────
+
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const cache: {
+  patterns?: CacheEntry<any>;
+  designSystem?: CacheEntry<any>;
+} = {};
+
+function isCacheValid<T>(entry?: CacheEntry<T>): entry is CacheEntry<T> {
+  return !!entry && (Date.now() - entry.timestamp) < CACHE_TTL_MS;
+}
+
+// ─── DYNAMIC DATA FETCHING ───────────────────────────────────────
+
+async function fetchLearnedPatterns(category?: string): Promise<any> {
+  // Check cache first
+  const cacheKey = `patterns_${category || 'all'}`;
+  if (isCacheValid(cache.patterns) && !category) {
+    return cache.patterns.data;
   }
-);
+
+  try {
+    const url = category
+      ? `${MCP_API_URL}/patterns?category=${category}&detail=standard`
+      : `${MCP_API_URL}/patterns?detail=standard`;
+
+    const response = await fetch(url, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(3000), // 3s timeout
+    });
+
+    if (!response.ok) throw new Error(`API returned ${response.status}`);
+
+    const data = await response.json();
+
+    // Cache the response
+    if (!category) {
+      cache.patterns = { data, timestamp: Date.now() };
+    }
+
+    return data;
+  } catch (error) {
+    // Fallback to bundled patterns
+    console.error("Failed to fetch patterns, using fallback:", error);
+    return {
+      source: "fallback",
+      patterns: patternsFallback.categories,
+    };
+  }
+}
 
 // ─── TYPES ───────────────────────────────────────────────────────
 
@@ -49,13 +98,24 @@ interface CategoryPattern {
 
 type DetailLevel = "minimal" | "standard" | "full";
 
+// ─── SERVER SETUP ────────────────────────────────────────────────
+
+const server = new Server(
+  {
+    name: "@ruixenui/mcp",
+    version: "0.2.0", // Updated version with learning
+  },
+  {
+    capabilities: {
+      tools: {},
+    },
+  }
+);
+
 // ─── COMPRESSED DATA HELPERS ─────────────────────────────────────
 
-/**
- * Returns minimal design system (~200 tokens vs ~2000 for full)
- */
 function getMinimalDesignSystem() {
-  const ds = designSystem as any;
+  const ds = designSystemFallback as any;
   return {
     spring: ds.motion.defaultConfig,
     presets: {
@@ -74,11 +134,8 @@ function getMinimalDesignSystem() {
   };
 }
 
-/**
- * Returns standard design system (~500 tokens)
- */
 function getStandardDesignSystem() {
-  const ds = designSystem as any;
+  const ds = designSystemFallback as any;
   return {
     motion: {
       default: ds.motion.defaultConfig,
@@ -101,14 +158,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "getDesignSystem",
       description:
-        "Returns Ruixen design system rules. Use detail='minimal' for token efficiency (~200 tokens), 'standard' for balanced (~500 tokens), 'full' for complete spec (~2000 tokens). Default: standard.",
+        "Returns Ruixen design system rules. Use detail='minimal' (~200 tokens), 'standard' (~500), 'full' (~2000). Fetches learned optimizations when available.",
       inputSchema: {
         type: "object" as const,
         properties: {
           detail: {
             type: "string",
             enum: ["minimal", "standard", "full"],
-            description: "Level of detail: minimal (200 tokens), standard (500 tokens), full (2000 tokens)",
+            description: "Level of detail",
           },
         },
       },
@@ -116,17 +173,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "getComponentPattern",
       description:
-        "Returns pattern for a component category. Includes spring configs, animation rules, do's and don'ts.",
+        "Returns LEARNED pattern for a category. Includes optimized spring values based on user feedback. Automatically improves over time.",
       inputSchema: {
         type: "object" as const,
         properties: {
           category: {
             type: "string",
-            description: "Category: buttons, cards, inputs, pagination, tabs, dialogs, notifications, loaders, backgrounds, navigation, docks, calendars, tables, forms, heroSections, pricingSections",
-          },
-          includeExamples: {
-            type: "boolean",
-            description: "Include example component names (default: false to save tokens)",
+            description: "Category: buttons, cards, inputs, pagination, tabs, dialogs, notifications, loaders, navigation",
           },
         },
         required: ["category"],
@@ -134,68 +187,57 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "searchComponents",
-      description:
-        "Search components by name/tag. Returns matching components with install commands.",
+      description: "Search components by name/tag.",
       inputSchema: {
         type: "object" as const,
         properties: {
-          query: {
-            type: "string",
-            description: "Search query",
-          },
-          limit: {
-            type: "number",
-            description: "Max results (default: 10)",
-          },
+          query: { type: "string", description: "Search query" },
+          limit: { type: "number", description: "Max results (default: 10)" },
         },
         required: ["query"],
       },
     },
     {
       name: "validateComponent",
-      description:
-        "Validates component code against Ruixen rules. Returns issues and warnings.",
+      description: "Validates component code against Ruixen rules.",
       inputSchema: {
         type: "object" as const,
         properties: {
-          code: {
-            type: "string",
-            description: "React component code to validate",
-          },
+          code: { type: "string", description: "React component code" },
         },
         required: ["code"],
       },
     },
     {
       name: "planComponent",
-      description:
-        "Creates a generation plan for user confirmation before generating. Returns structured plan with estimated tokens.",
+      description: "Creates generation plan for user confirmation. Returns estimated tokens and recommended settings.",
       inputSchema: {
         type: "object" as const,
         properties: {
-          description: {
-            type: "string",
-            description: "What component the user wants",
-          },
-          category: {
-            type: "string",
-            description: "Component category",
-          },
+          description: { type: "string", description: "What component the user wants" },
+          category: { type: "string", description: "Component category" },
         },
         required: ["description"],
       },
     },
     {
-      name: "getInstallCommand",
-      description:
-        "Get install command for a Ruixen component.",
+      name: "getOptimalSpring",
+      description: "Returns the BEST spring config for a category based on user feedback data. Uses learned values that have highest acceptance rate.",
       inputSchema: {
         type: "object" as const,
         properties: {
-          componentName: {
-            type: "string",
-            description: "Component name",
-          },
+          category: { type: "string", description: "Component category" },
+        },
+        required: ["category"],
+      },
+    },
+    {
+      name: "getInstallCommand",
+      description: "Get install command for a Ruixen component.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          componentName: { type: "string", description: "Component name" },
         },
         required: ["componentName"],
       },
@@ -218,72 +260,131 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           data = getMinimalDesignSystem();
           break;
         case "full":
-          data = designSystem;
+          data = designSystemFallback;
           break;
         default:
           data = getStandardDesignSystem();
       }
 
+      // Try to enrich with learned data
+      try {
+        const learned = await fetchLearnedPatterns();
+        if (learned.source === "learned") {
+          data._learned = {
+            source: "live",
+            updated: learned.updated,
+            stats: learned.stats,
+          };
+        }
+      } catch {
+        // Ignore, use fallback
+      }
+
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(data, null, detail === "full" ? 2 : 0),
-          },
-        ],
+        content: [{
+          type: "text",
+          text: JSON.stringify(data, null, detail === "full" ? 2 : 0),
+        }],
       };
     }
 
     case "getComponentPattern": {
-      const { category, includeExamples } = args as { category: string; includeExamples?: boolean };
-      const categoriesMap = patterns.categories as Record<string, CategoryPattern>;
+      const { category } = args as { category: string };
+
+      // Fetch learned patterns for this category
+      const learned = await fetchLearnedPatterns(category);
+
+      if (learned.source === "learned" && learned.patterns[category]) {
+        const catData = learned.patterns[category];
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              category,
+              source: "learned",
+              successRate: catData.successRate,
+              sampleSize: catData.sampleSize,
+              optimalSpring: catData.optimalSpring,
+              patterns: catData.learnedPatterns,
+              commonEdits: catData.commonEdits,
+              tip: "These patterns are optimized based on user feedback",
+            }, null, 0),
+          }],
+        };
+      }
+
+      // Fallback to bundled patterns
+      const categoriesMap = patternsFallback.categories as Record<string, CategoryPattern>;
       const pattern = categoriesMap[category];
 
       if (!pattern) {
         return {
-          content: [
-            {
-              type: "text",
-              text: `Unknown: ${category}. Available: ${Object.keys(patterns.categories).join(",")}`,
-            },
-          ],
+          content: [{
+            type: "text",
+            text: `Unknown: ${category}. Available: ${Object.keys(patternsFallback.categories).join(",")}`,
+          }],
         };
       }
 
-      const response: any = {
-        category,
-        pattern: pattern.pattern,
-        doNot: pattern.doNot || [],
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            category,
+            source: "default",
+            pattern: pattern.pattern,
+            doNot: pattern.doNot || [],
+            spring: (designSystemFallback as any).motion.defaultConfig,
+          }, null, 0),
+        }],
       };
+    }
 
-      if (includeExamples) {
-        response.examples = pattern.exampleNames;
+    case "getOptimalSpring": {
+      const { category } = args as { category: string };
+
+      try {
+        const learned = await fetchLearnedPatterns(category);
+        if (learned.source === "learned" && learned.patterns[category]?.optimalSpring) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                category,
+                spring: learned.patterns[category].optimalSpring,
+                source: "learned",
+                confidence: learned.patterns[category].optimalSpring.confidence || 0,
+              }, null, 0),
+            }],
+          };
+        }
+      } catch {
+        // Fallback below
       }
 
-      // Add minimal spring reminder
-      response.spring = (designSystem as any).motion.defaultConfig;
-
+      // Return default spring
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(response, null, 0),
-          },
-        ],
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            category,
+            spring: { stiffness: 400, damping: 28, mass: 1 },
+            source: "default",
+          }, null, 0),
+        }],
       };
     }
 
     case "searchComponents": {
       const { query, limit = 10 } = args as { query: string; limit?: number };
       const q = query.toLowerCase();
-      const componentsList = (components as { components: Component[] }).components;
+      const componentsList = (componentsFallback as { components: Component[] }).components;
 
       const results = componentsList
-        .filter(
-          (c: Component) =>
-            c.name.toLowerCase().includes(q) ||
-            c.tags.some((t: string) => t.toLowerCase().includes(q)) ||
-            c.category.toLowerCase().includes(q)
+        .filter((c: Component) =>
+          c.name.toLowerCase().includes(q) ||
+          c.tags.some((t: string) => t.toLowerCase().includes(q)) ||
+          c.category.toLowerCase().includes(q)
         )
         .slice(0, limit)
         .map((c: Component) => ({
@@ -293,12 +394,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }));
 
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({ q: query, n: results.length, r: results }, null, 0),
-          },
-        ],
+        content: [{
+          type: "text",
+          text: JSON.stringify({ q: query, n: results.length, r: results }, null, 0),
+        }],
       };
     }
 
@@ -307,7 +406,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const issues: string[] = [];
       const ok: string[] = [];
 
-      // Critical checks
       if (/transition-duration|ease-in|ease-out|cubic-bezier/.test(code)) {
         issues.push("CSS timing found - use spring");
       }
@@ -318,29 +416,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         issues.push("No default export");
       }
 
-      // Positive checks
       if (/stiffness.*damping|type.*spring/.test(code)) ok.push("Spring OK");
       if (/AudioContext|useSound/.test(code)) ok.push("Audio OK");
       if (/interface.*Props/.test(code)) ok.push("Types OK");
 
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              valid: issues.length === 0,
-              issues,
-              ok,
-            }, null, 0),
-          },
-        ],
+        content: [{
+          type: "text",
+          text: JSON.stringify({ valid: issues.length === 0, issues, ok }, null, 0),
+        }],
       };
     }
 
     case "planComponent": {
       const { description, category } = args as { description: string; category?: string };
 
-      // Analyze the description to create a plan
       const hasAnimation = /animat|motion|spring|hover|click|press/i.test(description);
       const hasInteraction = /button|click|toggle|select|input|form/i.test(description);
       const isComplex = /dashboard|form|table|calendar|wizard/i.test(description);
@@ -348,38 +438,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const features: string[] = [];
       if (hasAnimation) features.push("Spring animations");
       if (hasInteraction) features.push("Audio feedback");
-      features.push("Dark mode support");
-      features.push("TypeScript props");
+      features.push("Dark mode");
+      features.push("TypeScript");
 
       const complexity = isComplex ? "complex" : hasInteraction ? "medium" : "simple";
       const estimatedTokens = { simple: 800, medium: 1500, complex: 2500 }[complexity];
 
-      const plan = {
-        component: description.slice(0, 50),
-        category: category || "custom",
-        features,
-        spring: hasAnimation ? "bouncy" : "default",
-        audio: hasInteraction,
-        tokens: estimatedTokens,
-        prompt: complexity === "complex" ? "full" : "standard",
-      };
+      // Try to get optimal spring for detected category
+      let optimalSpring = { stiffness: 400, damping: 28, mass: 1 };
+      const detectedCat = category || (hasInteraction ? "buttons" : "custom");
+
+      try {
+        const learned = await fetchLearnedPatterns(detectedCat);
+        if (learned.patterns?.[detectedCat]?.optimalSpring) {
+          optimalSpring = learned.patterns[detectedCat].optimalSpring;
+        }
+      } catch {
+        // Use default
+      }
 
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              plan,
-              confirm: "Reply 'proceed' to generate, or describe adjustments",
-            }, null, 2),
-          },
-        ],
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            plan: {
+              component: description.slice(0, 50),
+              category: detectedCat,
+              features,
+              spring: optimalSpring,
+              audio: hasInteraction,
+              tokens: estimatedTokens,
+              prompt: complexity === "complex" ? "full" : "standard",
+            },
+            confirm: "Reply 'proceed' to generate",
+          }, null, 2),
+        }],
       };
     }
 
     case "getInstallCommand": {
       const componentName = (args as { componentName: string }).componentName;
-      const componentsList = (components as { components: Component[] }).components;
+      const componentsList = (componentsFallback as { components: Component[] }).components;
 
       const comp = componentsList.find(
         (c: Component) => c.name.toLowerCase() === componentName.toLowerCase()
@@ -392,28 +491,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           .map((c: Component) => c.name);
 
         return {
-          content: [
-            {
-              type: "text",
-              text: similar.length
-                ? `Not found. Similar: ${similar.join(", ")}`
-                : `Not found: ${componentName}`,
-            },
-          ],
+          content: [{
+            type: "text",
+            text: similar.length
+              ? `Not found. Similar: ${similar.join(", ")}`
+              : `Not found: ${componentName}`,
+          }],
         };
       }
 
       return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              name: comp.name,
-              cmd: comp.install.tw4,
-              deps: comp.dependencies,
-            }, null, 0),
-          },
-        ],
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            name: comp.name,
+            cmd: comp.install.tw4,
+            deps: comp.dependencies,
+          }, null, 0),
+        }],
       };
     }
 
@@ -429,7 +524,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Ruixen MCP running");
+  console.error("Ruixen MCP v0.2.0 (Learning Enabled)");
 }
 
 main().catch(console.error);
