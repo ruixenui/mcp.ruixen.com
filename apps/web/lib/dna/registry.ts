@@ -4,11 +4,16 @@
  * Hash-based component lookup - ZERO AI tokens.
  * Same DNA fingerprint always returns same component.
  *
- * Registry flow:
+ * Registry Architecture:
+ * - SOURCE OF TRUTH: ruixen.com component library
+ * - LOCAL CACHE: mcp.ruixen.com (for performance)
+ *
+ * Flow:
  * 1. DNA → Fingerprint hash
- * 2. Hash → Database lookup
- * 3. Hit → Return cached component
- * 4. Miss → Generate, then cache for future
+ * 2. Check local cache (fast)
+ * 3. Miss → Call ruixen.com registry API
+ * 4. Cache result locally
+ * 5. Generation fallback only if ruixen.com has no match
  */
 
 import {
@@ -16,6 +21,10 @@ import {
   createDNAFingerprint,
   calculateDNASimilarity,
 } from "./schema";
+
+// ─── RUIXEN.COM REGISTRY API ─────────────────────────────────────
+
+const RUIXEN_REGISTRY_URL = process.env.RUIXEN_REGISTRY_URL || "https://ruixen.com/api/registry";
 
 // ─── REGISTRY TYPES ──────────────────────────────────────────────
 
@@ -37,6 +46,7 @@ export interface RegistryLookupResult {
   hit: boolean;
   entry?: RegistryEntry;
   fingerprint: string;
+  source?: "memory" | "local-cache" | "ruixen.com" | "none";
   similarEntries?: {
     entry: RegistryEntry;
     similarity: number;
@@ -68,11 +78,67 @@ function getFromMemoryCache(fingerprint: string): RegistryEntry | null {
   return null;
 }
 
+// ─── RUIXEN.COM REGISTRY LOOKUP ──────────────────────────────────
+
+/**
+ * Lookup component from ruixen.com (source of truth).
+ * Returns component if found in the main registry.
+ */
+async function lookupFromRuixenRegistry(
+  fingerprint: string,
+  dna: ComponentDNA
+): Promise<RegistryEntry | null> {
+  try {
+    const response = await fetch(`${RUIXEN_REGISTRY_URL}/lookup`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ fingerprint, dna }),
+      signal: AbortSignal.timeout(5000), // 5s timeout
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) return null; // No match
+      throw new Error(`Registry returned ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.component) {
+      return {
+        id: data.component.id || `ruixen_${fingerprint}`,
+        fingerprint,
+        dna,
+        code: data.component.code,
+        metadata: {
+          createdAt: data.component.createdAt || new Date().toISOString(),
+          usageCount: data.component.usageCount || 0,
+          successRate: data.component.successRate || 1.0,
+          avgRating: data.component.avgRating || 5.0,
+          lastUsed: new Date().toISOString(),
+        },
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Ruixen registry lookup failed:", error);
+    return null;
+  }
+}
+
 // ─── REGISTRY OPERATIONS ─────────────────────────────────────────
 
 /**
  * Look up component by DNA.
- * First checks memory cache, then database.
+ *
+ * Lookup order:
+ * 1. Memory cache (instant)
+ * 2. Local DB cache (fast)
+ * 3. ruixen.com registry (source of truth)
+ * 4. Miss → Generation fallback
  */
 export async function lookupByDNA(
   dna: ComponentDNA,
@@ -80,84 +146,131 @@ export async function lookupByDNA(
 ): Promise<RegistryLookupResult> {
   const fingerprint = createDNAFingerprint(dna);
 
-  // Check memory cache first
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 1: Memory cache (instant)
+  // ═══════════════════════════════════════════════════════════════
   const cached = getFromMemoryCache(fingerprint);
   if (cached) {
     return {
       hit: true,
       entry: cached,
       fingerprint,
+      source: "memory",
     };
   }
 
-  // Check database
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 2: Local DB cache (fast)
+  // ═══════════════════════════════════════════════════════════════
   try {
-    const { data: exactMatch } = await supabase
+    const { data: localMatch } = await supabase
       .from("component_registry")
       .select("*")
       .eq("fingerprint", fingerprint)
       .single();
 
-    if (exactMatch) {
-      const entry = dbRowToEntry(exactMatch);
+    if (localMatch) {
+      const entry = dbRowToEntry(localMatch);
       addToMemoryCache(entry);
 
       // Update usage stats
       await supabase
         .from("component_registry")
         .update({
-          usage_count: exactMatch.usage_count + 1,
+          usage_count: localMatch.usage_count + 1,
           last_used: new Date().toISOString(),
         })
-        .eq("id", exactMatch.id);
+        .eq("id", localMatch.id);
 
       return {
         hit: true,
         entry,
         fingerprint,
+        source: "local-cache",
       };
     }
+  } catch {
+    // No local cache, continue to ruixen.com
+  }
 
-    // No exact match, find similar entries
-    const { data: allEntries } = await supabase
-      .from("component_registry")
-      .select("*")
-      .eq("dna->>type", dna.type)
-      .order("usage_count", { ascending: false })
-      .limit(10);
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 3: ruixen.com registry (source of truth)
+  // ═══════════════════════════════════════════════════════════════
+  const ruixenEntry = await lookupFromRuixenRegistry(fingerprint, dna);
 
-    if (allEntries && allEntries.length > 0) {
-      const similarEntries = allEntries
-        .map((row: any) => ({
-          entry: dbRowToEntry(row),
-          similarity: calculateDNASimilarity(dna, row.dna),
-        }))
-        .filter((item: any) => item.similarity > 0.7)
-        .sort((a: any, b: any) => b.similarity - a.similarity);
+  if (ruixenEntry) {
+    // Cache locally for future lookups
+    addToMemoryCache(ruixenEntry);
 
-      return {
-        hit: false,
+    // Also persist to local DB cache
+    try {
+      await supabase.from("component_registry").upsert({
         fingerprint,
-        similarEntries: similarEntries.slice(0, 3),
-      };
+        dna,
+        code: ruixenEntry.code,
+        usage_count: 1,
+        success_rate: ruixenEntry.metadata.successRate,
+        avg_rating: ruixenEntry.metadata.avgRating,
+        source: "ruixen.com",
+      });
+    } catch {
+      // Ignore cache write errors
     }
 
     return {
-      hit: false,
+      hit: true,
+      entry: ruixenEntry,
       fingerprint,
+      source: "ruixen.com",
     };
-  } catch (error) {
-    console.error("Registry lookup error:", error);
-    return {
-      hit: false,
-      fingerprint,
-    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // NO MATCH - Return for generation fallback
+  // ═══════════════════════════════════════════════════════════════
+  return {
+    hit: false,
+    fingerprint,
+    source: "none",
+  };
+}
+
+/**
+ * Submit generated component to ruixen.com for review.
+ * Generated components can be promoted to the main registry.
+ */
+async function submitToRuixenRegistry(
+  fingerprint: string,
+  dna: ComponentDNA,
+  code: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${RUIXEN_REGISTRY_URL}/submit`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fingerprint,
+        dna,
+        code,
+        source: "mcp-generated",
+        timestamp: new Date().toISOString(),
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    return response.ok;
+  } catch {
+    // Non-blocking - don't fail if submission fails
+    return false;
   }
 }
 
 /**
  * Add generated component to registry.
- * Called after generation fallback.
+ * 1. Cache locally for immediate reuse
+ * 2. Submit to ruixen.com for potential promotion to main registry
  */
 export async function addToRegistry(
   dna: ComponentDNA,
@@ -167,6 +280,9 @@ export async function addToRegistry(
   const fingerprint = createDNAFingerprint(dna);
 
   try {
+    // ═══════════════════════════════════════════════════════════════
+    // LOCAL CACHE: Store for immediate reuse
+    // ═══════════════════════════════════════════════════════════════
     const { data, error } = await supabase
       .from("component_registry")
       .insert({
@@ -176,6 +292,7 @@ export async function addToRegistry(
         usage_count: 1,
         success_rate: 1.0,
         avg_rating: 5.0,
+        source: "mcp-generated",
       })
       .select()
       .single();
@@ -201,6 +318,13 @@ export async function addToRegistry(
 
     const entry = dbRowToEntry(data);
     addToMemoryCache(entry);
+
+    // ═══════════════════════════════════════════════════════════════
+    // SUBMIT TO RUIXEN.COM: For potential promotion to main registry
+    // ═══════════════════════════════════════════════════════════════
+    // Non-blocking - don't wait for response
+    submitToRuixenRegistry(fingerprint, dna, code).catch(() => {});
+
     return entry;
   } catch (error) {
     console.error("Registry add error:", error);
