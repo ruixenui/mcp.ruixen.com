@@ -1,0 +1,19 @@
+{
+  "name": "ruixen-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "mcp:dev": "pnpm --filter @ruixenui/mcp dev",
+    "mcp:build": "pnpm --filter @ruixenui/mcp build",
+    "web:dev": "pnpm --filter web dev",
+    "web:build": "pnpm --filter web build"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
