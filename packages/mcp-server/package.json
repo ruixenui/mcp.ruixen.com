@@ -1,0 +1,61 @@
+{
+  "name": "@ruixenui/mcp",
+  "version": "0.1.0",
+  "description": "Ruixen UI MCP Server — Teach AI agents to generate physics-based UI components",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "@ruixenui/mcp": "./dist/index.js",
+    "ruixen-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc && npm run copy-data",
+    "copy-data": "cp -r src/data dist/",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ruixen",
+    "ui",
+    "components",
+    "tailwind",
+    "react",
+    "spring-physics",
+    "framer-motion",
+    "motion",
+    "ai",
+    "claude",
+    "cursor",
+    "windsurf"
+  ],
+  "author": "Ruixen UI",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ruixenui/mcp"
+  },
+  "homepage": "https://mcp.ruixen.com",
+  "bugs": {
+    "url": "https://github.com/ruixenui/mcp/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
