@@ -98,12 +98,168 @@ interface CategoryPattern {
 
 type DetailLevel = "minimal" | "standard" | "full";
 
+// ─── DNA TYPES ───────────────────────────────────────────────────
+
+interface ComponentDNA {
+  type: string;
+  interaction: string[];
+  a11y: string[];
+  layout: string[];
+  animation: string[];
+  variants: string[];
+}
+
+// ─── DNA ENRICHMENT RULES (Pure Code) ────────────────────────────
+
+function enrichDNA(dna: ComponentDNA): ComponentDNA {
+  const enriched = { ...dna };
+
+  // Overlay components need portal
+  if (["dropdown", "select", "modal", "dialog", "drawer", "popover", "tooltip", "menu"].includes(dna.type)) {
+    if (!enriched.layout.includes("portal")) enriched.layout.push("portal");
+  }
+
+  // Interactive components need click + keyboard
+  if (["button", "checkbox", "radio", "switch", "dropdown", "select"].includes(dna.type)) {
+    if (!enriched.interaction.includes("click")) enriched.interaction.push("click");
+    if (!enriched.interaction.includes("keyboard")) enriched.interaction.push("keyboard");
+  }
+
+  // Overlays need outside-dismiss
+  if (["dropdown", "select", "popover", "menu"].includes(dna.type)) {
+    if (!enriched.interaction.includes("outside-dismiss")) enriched.interaction.push("outside-dismiss");
+  }
+
+  // Modals need focus-trap + escape
+  if (["modal", "dialog", "drawer"].includes(dna.type)) {
+    if (!enriched.a11y.includes("focus-trap")) enriched.a11y.push("focus-trap");
+    if (!enriched.interaction.includes("escape-dismiss")) enriched.interaction.push("escape-dismiss");
+  }
+
+  // Expandable needs aria-expanded
+  if (["dropdown", "select", "accordion", "popover", "menu"].includes(dna.type)) {
+    if (!enriched.a11y.includes("aria-expanded")) enriched.a11y.push("aria-expanded");
+  }
+
+  // Animation requires reduced-motion support
+  if (enriched.animation.length > 0 && !enriched.a11y.includes("reduced-motion")) {
+    enriched.a11y.push("reduced-motion");
+  }
+
+  // Default spring animation for interactive components
+  if (enriched.animation.length === 0 && ["button", "card", "dropdown", "modal"].includes(dna.type)) {
+    enriched.animation.push("spring");
+  }
+
+  return enriched;
+}
+
+// ─── DNA FINGERPRINT ─────────────────────────────────────────────
+
+function createDNAFingerprint(dna: ComponentDNA): string {
+  const normalized = {
+    type: dna.type,
+    interaction: [...dna.interaction].sort(),
+    a11y: [...dna.a11y].sort(),
+    layout: [...dna.layout].sort(),
+    animation: [...dna.animation].sort(),
+    variants: [...dna.variants].sort(),
+  };
+
+  const str = JSON.stringify(normalized);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash = hash & hash;
+  }
+
+  return `dna_${dna.type}_${Math.abs(hash).toString(16).padStart(8, '0')}`;
+}
+
+// ─── DNA PARSER (Local, Zero Tokens) ─────────────────────────────
+
+function parseDNALocally(input: string): ComponentDNA | null {
+  const lower = input.toLowerCase();
+
+  const typePatterns: [RegExp, string][] = [
+    [/\b(dropdown|drop-down)\b/, "dropdown"],
+    [/\b(select|selector)\b/, "select"],
+    [/\b(modal|popup)\b/, "modal"],
+    [/\b(dialog)\b/, "dialog"],
+    [/\b(drawer|panel)\b/, "drawer"],
+    [/\b(popover)\b/, "popover"],
+    [/\b(tooltip)\b/, "tooltip"],
+    [/\b(menu)\b/, "menu"],
+    [/\b(tabs?)\b/, "tabs"],
+    [/\b(accordion|collapsible)\b/, "accordion"],
+    [/\b(card)\b/, "card"],
+    [/\b(button|btn)\b/, "button"],
+    [/\b(input|text-field)\b/, "input"],
+    [/\b(checkbox)\b/, "checkbox"],
+    [/\b(switch|toggle)\b/, "switch"],
+    [/\b(toast|notification)\b/, "toast"],
+    [/\b(avatar)\b/, "avatar"],
+    [/\b(loader|spinner)\b/, "loader"],
+    [/\b(pagination)\b/, "pagination"],
+    [/\b(navigation|nav)\b/, "navigation"],
+    [/\b(table)\b/, "table"],
+    [/\b(calendar)\b/, "calendar"],
+  ];
+
+  let type: string | null = null;
+  for (const [pattern, t] of typePatterns) {
+    if (pattern.test(lower)) {
+      type = t;
+      break;
+    }
+  }
+
+  if (!type) return null;
+
+  const dna: ComponentDNA = {
+    type,
+    interaction: [],
+    a11y: [],
+    layout: [],
+    animation: [],
+    variants: [],
+  };
+
+  // Parse features
+  if (/click|press/.test(lower)) dna.interaction.push("click");
+  if (/hover/.test(lower)) dna.interaction.push("hover");
+  if (/keyboard|arrow|enter/.test(lower)) dna.interaction.push("keyboard");
+  if (/outside|dismiss/.test(lower)) dna.interaction.push("outside-dismiss");
+  if (/escape/.test(lower)) dna.interaction.push("escape-dismiss");
+  if (/focus-trap/.test(lower)) dna.a11y.push("focus-trap");
+  if (/portal/.test(lower)) dna.layout.push("portal");
+  if (/spring|bouncy/.test(lower)) dna.animation.push("spring");
+  if (/multi/.test(lower)) dna.variants.push("multi-select");
+
+  return dna;
+}
+
+// ─── SPRING FROM DNA ─────────────────────────────────────────────
+
+function getSpringFromDNA(dna: ComponentDNA): { stiffness: number; damping: number; mass: number } {
+  if (dna.animation.includes("spring-snappy") || dna.type === "button") {
+    return { stiffness: 500, damping: 30, mass: 0.8 };
+  }
+  if (dna.animation.includes("spring-smooth") || ["modal", "dialog", "drawer"].includes(dna.type)) {
+    return { stiffness: 300, damping: 25, mass: 1 };
+  }
+  if (dna.animation.includes("spring-bouncy") || ["toast", "notification"].includes(dna.type)) {
+    return { stiffness: 400, damping: 15, mass: 1 };
+  }
+  return { stiffness: 400, damping: 28, mass: 1 };
+}
+
 // ─── SERVER SETUP ────────────────────────────────────────────────
 
 const server = new Server(
   {
     name: "@ruixenui/mcp",
-    version: "0.2.0", // Updated version with learning
+    version: "0.3.0", // DNA-based zero-token lookup
   },
   {
     capabilities: {
@@ -240,6 +396,69 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           componentName: { type: "string", description: "Component name" },
         },
         required: ["componentName"],
+      },
+    },
+    // ═══════════════════════════════════════════════════════════════
+    // DNA TOOLS - Zero-token component generation
+    // ═══════════════════════════════════════════════════════════════
+    {
+      name: "parseDNA",
+      description:
+        "Parse natural language into Component DNA. This is a ZERO-token operation - no AI needed. Returns structured DNA for registry lookup. Use this FIRST before any generation.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          input: {
+            type: "string",
+            description: "Natural language description (e.g., 'dropdown with portal and focus trap')",
+          },
+        },
+        required: ["input"],
+      },
+    },
+    {
+      name: "enrichDNA",
+      description:
+        "Enrich DNA with Ruixen design rules. ZERO tokens - pure code. Adds required features automatically (e.g., dropdown gets portal, modal gets focus-trap). Always call after parseDNA.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          dna: {
+            type: "object",
+            description: "ComponentDNA object from parseDNA",
+          },
+        },
+        required: ["dna"],
+      },
+    },
+    {
+      name: "getDNAFingerprint",
+      description:
+        "Get unique fingerprint for DNA. Same DNA always returns same hash. Use for registry lookup.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          dna: {
+            type: "object",
+            description: "ComponentDNA object",
+          },
+        },
+        required: ["dna"],
+      },
+    },
+    {
+      name: "lookupDNA",
+      description:
+        "MASTER TOOL: Parse input → Enrich DNA → Get fingerprint → Return component spec. One call, zero AI tokens. Use this for any component request.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          input: {
+            type: "string",
+            description: "Natural language component description",
+          },
+        },
+        required: ["input"],
       },
     },
   ],
@@ -512,6 +731,194 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // DNA TOOL HANDLERS - Zero-token component generation
+    // ═══════════════════════════════════════════════════════════════
+
+    case "parseDNA": {
+      const { input } = args as { input: string };
+
+      const dna = parseDNALocally(input);
+
+      if (!dna) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: "Could not parse component type from input",
+              hint: "Try including a component type like: button, dropdown, modal, card, etc.",
+            }, null, 0),
+          }],
+        };
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            dna,
+            tokens: 0,
+            note: "Local parse - zero AI tokens used",
+          }, null, 0),
+        }],
+      };
+    }
+
+    case "enrichDNA": {
+      const { dna } = args as { dna: ComponentDNA };
+
+      if (!dna || !dna.type) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: "Invalid DNA object - must have 'type' field",
+            }, null, 0),
+          }],
+        };
+      }
+
+      // Ensure arrays exist
+      const normalizedDNA: ComponentDNA = {
+        type: dna.type,
+        interaction: dna.interaction || [],
+        a11y: dna.a11y || [],
+        layout: dna.layout || [],
+        animation: dna.animation || [],
+        variants: dna.variants || [],
+      };
+
+      const enriched = enrichDNA(normalizedDNA);
+      const spring = getSpringFromDNA(enriched);
+
+      // Calculate what was added
+      const added = {
+        interaction: enriched.interaction.filter(i => !normalizedDNA.interaction.includes(i)),
+        a11y: enriched.a11y.filter(a => !normalizedDNA.a11y.includes(a)),
+        layout: enriched.layout.filter(l => !normalizedDNA.layout.includes(l)),
+        animation: enriched.animation.filter(a => !normalizedDNA.animation.includes(a)),
+      };
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            enriched,
+            spring,
+            added,
+            tokens: 0,
+            note: "Pure code enrichment - zero AI tokens used",
+          }, null, 0),
+        }],
+      };
+    }
+
+    case "getDNAFingerprint": {
+      const { dna } = args as { dna: ComponentDNA };
+
+      if (!dna || !dna.type) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: "Invalid DNA object",
+            }, null, 0),
+          }],
+        };
+      }
+
+      const fingerprint = createDNAFingerprint(dna);
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            fingerprint,
+            dna,
+            tokens: 0,
+          }, null, 0),
+        }],
+      };
+    }
+
+    case "lookupDNA": {
+      const { input } = args as { input: string };
+
+      // Step 1: Parse
+      const parsed = parseDNALocally(input);
+
+      if (!parsed) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              stage: "parse",
+              error: "Could not identify component type",
+              hint: "Include a type: button, dropdown, modal, card, tabs, accordion, etc.",
+              tokens: 0,
+            }, null, 0),
+          }],
+        };
+      }
+
+      // Step 2: Enrich
+      const enriched = enrichDNA(parsed);
+
+      // Step 3: Get spring config
+      const spring = getSpringFromDNA(enriched);
+
+      // Step 4: Generate fingerprint
+      const fingerprint = createDNAFingerprint(enriched);
+
+      // Step 5: Build generation spec
+      const spec = {
+        type: enriched.type,
+        features: [
+          ...enriched.interaction.map(i => `interaction:${i}`),
+          ...enriched.a11y.map(a => `a11y:${a}`),
+          ...enriched.layout.map(l => `layout:${l}`),
+          ...enriched.animation.map(a => `animation:${a}`),
+          ...enriched.variants.map(v => `variant:${v}`),
+        ],
+        spring,
+        imports: [
+          "import { motion } from 'motion/react';",
+          enriched.interaction.includes("click") ? "const useSound = (e=true) => { /* audio hook */ };" : null,
+          enriched.layout.includes("portal") ? "import { createPortal } from 'react-dom';" : null,
+        ].filter(Boolean),
+      };
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            fingerprint,
+            pipeline: {
+              input,
+              parsed,
+              enriched,
+            },
+            spec,
+            tokens: {
+              parse: 0,
+              enrich: 0,
+              lookup: 0,
+              total: 0,
+            },
+            note: "Complete DNA pipeline - ZERO AI tokens. Use fingerprint for registry lookup.",
+          }, null, 2),
+        }],
+      };
+    }
+
     default:
       return {
         content: [{ type: "text", text: `Unknown: ${name}` }],
@@ -524,7 +931,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Ruixen MCP v0.2.0 (Learning Enabled)");
+  console.error("Ruixen MCP v0.3.0 (DNA Zero-Token)");
 }
 
 main().catch(console.error);
