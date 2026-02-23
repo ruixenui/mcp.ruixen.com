@@ -254,12 +254,105 @@ function getSpringFromDNA(dna: ComponentDNA): { stiffness: number; damping: numb
   return { stiffness: 400, damping: 28, mass: 1 };
 }
 
+// ─── CODE VALIDATION ──────────────────────────────────────────────
+
+interface ValidationIssue {
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+  fix: string;
+}
+
+function validateGeneratedCode(code: string, dna: ComponentDNA): { valid: boolean; score: number; issues: ValidationIssue[]; passed: string[] } {
+  const issues: ValidationIssue[] = [];
+  const passed: string[] = [];
+
+  // Portal check
+  if (["dropdown", "select", "modal", "dialog", "drawer", "popover", "tooltip", "menu"].includes(dna.type)) {
+    if (/createPortal|Portal|FloatingPortal|@floating-ui/.test(code)) {
+      passed.push("PORTAL");
+    } else {
+      issues.push({ severity: "error", code: "NO_PORTAL", message: "No portal — dropdown will break inside transformed parents", fix: "Use createPortal or FloatingPortal" });
+    }
+  }
+
+  // Keyboard navigation check
+  if (dna.interaction.includes("keyboard")) {
+    if (/onKeyDown|handleKeyDown|ArrowUp|ArrowDown|Enter|Escape/.test(code)) {
+      passed.push("KEYBOARD_NAV");
+    } else {
+      issues.push({ severity: "error", code: "NO_KEYBOARD_NAV", message: "No keyboard navigation — fails WCAG 2.1", fix: "Add onKeyDown with Arrow keys, Enter, Escape" });
+    }
+  }
+
+  // Reduced motion check
+  if (dna.animation.length > 0) {
+    if (/prefers-reduced-motion|reducedMotion|useReducedMotion|motion-reduce/.test(code)) {
+      passed.push("REDUCED_MOTION");
+    } else {
+      issues.push({ severity: "error", code: "NO_REDUCED_MOTION", message: "Animation ignores prefers-reduced-motion", fix: "Add useReducedMotion hook or motion-reduce CSS" });
+    }
+  }
+
+  // Fixed height check for expandable components
+  if (["accordion", "dropdown", "select", "popover", "menu"].includes(dna.type)) {
+    if (!/height:\s*\d+px/.test(code) || /height.*auto|useMeasure|getBoundingClientRect/.test(code)) {
+      passed.push("DYNAMIC_HEIGHT");
+    } else {
+      issues.push({ severity: "error", code: "FIXED_HEIGHT", message: "Uses fixed height — won't handle dynamic content", fix: "Use auto height with useMeasure for animation" });
+    }
+  }
+
+  // Velocity inheritance check
+  if (dna.animation.some(a => a.startsWith("spring")) && ["dropdown", "modal", "drawer", "accordion", "toast"].includes(dna.type)) {
+    if (/velocity|useSpring|useMotionValue/.test(code)) {
+      passed.push("VELOCITY_INHERIT");
+    } else {
+      issues.push({ severity: "warning", code: "NO_VELOCITY_INHERIT", message: "Spring animation has no velocity inheritance on interrupt", fix: "Use useSpring or pass velocity state" });
+    }
+  }
+
+  // Focus trap check for modals
+  if (["modal", "dialog", "drawer"].includes(dna.type)) {
+    if (/FocusTrap|useFocusTrap|focus-trap/.test(code)) {
+      passed.push("FOCUS_TRAP");
+    } else {
+      issues.push({ severity: "error", code: "NO_FOCUS_TRAP", message: "No focus trap — modal allows focus to escape", fix: "Use FocusTrap component or useFocusTrap hook" });
+    }
+  }
+
+  // Aria attributes check
+  if (["dropdown", "select", "accordion", "popover", "menu"].includes(dna.type)) {
+    if (/aria-expanded/.test(code)) {
+      passed.push("ARIA_EXPANDED");
+    } else {
+      issues.push({ severity: "error", code: "NO_ARIA_EXPANDED", message: "Missing aria-expanded", fix: "Add aria-expanded={isOpen}" });
+    }
+  }
+
+  // CSS transition check (should use spring)
+  if (dna.animation.some(a => a.startsWith("spring"))) {
+    if (!/transition-duration|ease-in|ease-out|cubic-bezier/.test(code)) {
+      passed.push("NO_CSS_TRANSITION");
+    } else {
+      issues.push({ severity: "error", code: "CSS_TRANSITION", message: "CSS transition found — should use spring physics", fix: "Replace with motion/react spring" });
+    }
+  }
+
+  // Calculate score
+  const errorCount = issues.filter(i => i.severity === "error").length;
+  const warningCount = issues.filter(i => i.severity === "warning").length;
+  const score = Math.max(0, 100 - errorCount * 10 - warningCount * 5);
+
+  return { valid: errorCount === 0, score, issues, passed };
+}
+
 // ─── SERVER SETUP ────────────────────────────────────────────────
 
 const server = new Server(
   {
     name: "@ruixenui/mcp",
-    version: "0.3.0", // DNA-based zero-token lookup
+    version: "0.3.1", // DNA validation added
   },
   {
     capabilities: {
@@ -459,6 +552,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ["input"],
+      },
+    },
+    {
+      name: "validateGeneratedCode",
+      description:
+        "Validates generated code against DNA requirements. Checks for: portal usage, keyboard nav, reduced-motion, dynamic height, velocity inheritance, focus traps, aria attributes. Returns issues with fixes.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          code: {
+            type: "string",
+            description: "Generated React component code",
+          },
+          dna: {
+            type: "object",
+            description: "ComponentDNA object the code should implement",
+          },
+        },
+        required: ["code", "dna"],
       },
     },
   ],
@@ -919,6 +1031,65 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    case "validateGeneratedCode": {
+      const { code, dna } = args as { code: string; dna: ComponentDNA };
+
+      if (!code || !dna || !dna.type) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: "Both code and dna are required",
+            }, null, 0),
+          }],
+        };
+      }
+
+      // Normalize DNA
+      const normalizedDNA: ComponentDNA = {
+        type: dna.type,
+        interaction: dna.interaction || [],
+        a11y: dna.a11y || [],
+        layout: dna.layout || [],
+        animation: dna.animation || [],
+        variants: dna.variants || [],
+      };
+
+      // Enrich first to get full requirements
+      const enriched = enrichDNA(normalizedDNA);
+
+      // Validate against enriched DNA
+      const result = validateGeneratedCode(code, enriched);
+
+      // Format output
+      const summary: string[] = [];
+      for (const issue of result.issues) {
+        const icon = issue.severity === "error" ? "❌" : "⚠️";
+        summary.push(`${icon} ${issue.message}`);
+      }
+      for (const p of result.passed) {
+        summary.push(`✅ ${p.replace(/_/g, " ")}`);
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            success: true,
+            valid: result.valid,
+            score: result.score,
+            summary: summary.join("\n"),
+            issues: result.issues,
+            passed: result.passed,
+            note: result.valid
+              ? "All validation checks passed"
+              : `${result.issues.filter(i => i.severity === "error").length} errors, ${result.issues.filter(i => i.severity === "warning").length} warnings`,
+          }, null, 2),
+        }],
+      };
+    }
+
     default:
       return {
         content: [{ type: "text", text: `Unknown: ${name}` }],
@@ -931,7 +1102,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Ruixen MCP v0.3.0 (DNA Zero-Token)");
+  console.error("Ruixen MCP v0.3.1 (DNA + Validation)");
 }
 
 main().catch(console.error);

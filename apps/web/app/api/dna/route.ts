@@ -6,6 +6,7 @@ import { ComponentDNA, createDNAFingerprint, validateDNA } from "@/lib/dna/schem
 import { enrichDNA, getSpringFromDNA } from "@/lib/dna/enrichment";
 import { parseIntentLocally, parseAIResponse, INTENT_PARSER_PROMPT } from "@/lib/dna/parser";
 import { lookupByDNA, addToRegistry } from "@/lib/dna/registry";
+import { validateCode, getGenerationHints, ValidationResult } from "@/lib/dna/validation";
 import { getSystemPrompt } from "@/lib/ai/system-prompt";
 
 // ─── TYPES ───────────────────────────────────────────────────────
@@ -41,6 +42,14 @@ interface DNAResponse {
     stiffness: number;
     damping: number;
     mass: number;
+  };
+
+  // Validation results
+  validation: {
+    valid: boolean;
+    score: number;
+    issues: { severity: string; code: string; message: string; fix?: string }[];
+    passed: string[];
   };
 
   // Registry info
@@ -257,6 +266,12 @@ export async function POST(req: NextRequest) {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // VALIDATION
+    // ═══════════════════════════════════════════════════════════════
+
+    const validationResult = validateCode(code, enrichedDNA);
+
+    // ═══════════════════════════════════════════════════════════════
     // RESPONSE
     // ═══════════════════════════════════════════════════════════════
 
@@ -280,6 +295,7 @@ export async function POST(req: NextRequest) {
       },
       code,
       spring,
+      validation: validationResult,
       registry: registryInfo,
     };
 
@@ -330,11 +346,18 @@ function createDNAPrompt(dna: ComponentDNA, spring: any): string {
     ...dna.variants.map((v) => `- Variant: ${v}`),
   ].join("\n");
 
+  // Get validation-aware hints
+  const hints = getGenerationHints(dna);
+  const hintsSection = hints.length > 0
+    ? `\n\nCRITICAL REQUIREMENTS (will be validated):\n${hints.map(h => `• ${h}`).join("\n")}`
+    : "";
+
   return `Create a ${dna.type} component with these EXACT specifications:
 
 ${features}
 
 Spring config: { stiffness: ${spring.stiffness}, damping: ${spring.damping}, mass: ${spring.mass} }
+${hintsSection}
 
 Generate the complete TypeScript React component.`;
 }

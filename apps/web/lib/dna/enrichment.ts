@@ -312,6 +312,100 @@ const ENRICHMENT_RULES: EnrichmentRule[] = [
       }
     },
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // DYNAMIC CONTENT RULES
+  // ═══════════════════════════════════════════════════════════════
+
+  {
+    name: "dynamic-height-for-expandable",
+    condition: (dna) =>
+      ["accordion", "dropdown", "select", "popover", "menu"].includes(dna.type),
+    apply: (dna) => {
+      if (!dna.layout.includes("dynamic-height")) {
+        dna.layout.push("dynamic-height");
+      }
+    },
+  },
+
+  {
+    name: "max-height-with-scroll",
+    condition: (dna) =>
+      ["dropdown", "select", "menu"].includes(dna.type) &&
+      dna.layout.includes("dynamic-height"),
+    apply: (dna) => {
+      if (!dna.layout.includes("max-height-scroll")) {
+        dna.layout.push("max-height-scroll");
+      }
+    },
+  },
+
+  {
+    name: "measure-content-for-animation",
+    condition: (dna) =>
+      dna.layout.includes("dynamic-height") && dna.animation.length > 0,
+    apply: (dna) => {
+      if (!dna.layout.includes("measure-content")) {
+        dna.layout.push("measure-content");
+      }
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // VELOCITY & INTERRUPTION RULES
+  // ═══════════════════════════════════════════════════════════════
+
+  {
+    name: "velocity-inherit-on-interrupt",
+    condition: (dna) =>
+      dna.animation.some(a => a.startsWith("spring")) &&
+      ["dropdown", "modal", "drawer", "accordion", "toast"].includes(dna.type),
+    apply: (dna) => {
+      if (!dna.animation.includes("velocity-inherit")) {
+        dna.animation.push("velocity-inherit");
+      }
+    },
+  },
+
+  {
+    name: "interruptible-animations",
+    condition: (dna) =>
+      dna.animation.some(a => a.startsWith("spring")) &&
+      dna.interaction.includes("click"),
+    apply: (dna) => {
+      if (!dna.animation.includes("interruptible")) {
+        dna.animation.push("interruptible");
+      }
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // TRANSFORM-SAFE POSITIONING
+  // ═══════════════════════════════════════════════════════════════
+
+  {
+    name: "transform-safe-portal",
+    condition: (dna) =>
+      dna.layout.includes("portal"),
+    apply: (dna) => {
+      // Portal components need transform-safe positioning
+      if (!dna.layout.includes("transform-safe")) {
+        dna.layout.push("transform-safe");
+      }
+    },
+  },
+
+  {
+    name: "position-strategy-for-overlays",
+    condition: (dna) =>
+      ["dropdown", "popover", "tooltip", "menu"].includes(dna.type),
+    apply: (dna) => {
+      // Use floating-ui or similar for position calculation
+      if (!dna.layout.includes("floating-position")) {
+        dna.layout.push("floating-position");
+      }
+    },
+  },
 ];
 
 // ─── ENRICHMENT ENGINE ───────────────────────────────────────────

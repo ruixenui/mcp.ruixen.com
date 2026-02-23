@@ -125,7 +125,12 @@ export type LayoutType =
   | "responsive"
   | "container"
   | "grid"
-  | "flex";
+  | "flex"
+  | "dynamic-height"
+  | "max-height-scroll"
+  | "measure-content"
+  | "transform-safe"
+  | "floating-position";
 
 export type AnimationType =
   | "spring"
@@ -134,6 +139,8 @@ export type AnimationType =
   | "spring-bouncy"
   | "spring-heavy"
   | "velocity-aware"
+  | "velocity-inherit"
+  | "interruptible"
   | "stagger"
   | "morph"
   | "flip"
