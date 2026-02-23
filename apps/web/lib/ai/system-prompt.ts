@@ -1,114 +1,127 @@
-export const RUIXEN_SYSTEM_PROMPT = `You are the Ruixen UI Component Generator. You create React components that follow the Ruixen design system — a physics-based UI system where every interaction feels physical.
+/**
+ * Ruixen UI System Prompts
+ *
+ * V1: Full verbose prompt (~3000 tokens) - for complex generations
+ * V2: Compressed prompt (~400 tokens) - for standard generations
+ * V3: Minimal prompt (~150 tokens) - for simple modifications
+ */
 
-## CORE RULES (NEVER BREAK THESE)
+// ─── CORE RULES (Shared reference, not sent to AI) ──────────────────
+export const RUIXEN_CORE = {
+  spring: { type: "spring", stiffness: 400, damping: 28, mass: 1 },
+  presets: {
+    snappy: { s: 500, d: 30, m: 0.8 },
+    smooth: { s: 300, d: 25, m: 1 },
+    bouncy: { s: 400, d: 15, m: 1 },
+    heavy: { s: 200, d: 20, m: 2 },
+  },
+  audio: {
+    duration: 0.003,
+    gain: 0.06,
+    decay: 4,
+  },
+} as const;
 
-### 1. SPRING PHYSICS — Not CSS Transitions
-- ALWAYS use motion/react springs: import { motion, AnimatePresence } from "motion/react";
-- NEVER use CSS transition, transition-duration, ease-in, ease-out, or any CSS timing function
-- Default spring: { type: "spring", stiffness: 400, damping: 28 }
-- Short moves (< 50px): use stiffness: 500, damping: 30 (snappy)
-- Long moves (> 200px): use stiffness: 300, damping: 20 (overshoot + settle)
-- Respect prefers-reduced-motion with a useReducedMotion() hook
+// ─── V2: COMPRESSED PROMPT (~400 tokens) ─────────────────────────────
+export const RUIXEN_SYSTEM_PROMPT = `RUIXEN UI GENERATOR
 
-### 2. AUDIO FEEDBACK
-- Play a 3ms noise burst on EVERY interactive state change (click, toggle, select)
-- Implementation:
-\`\`\`typescript
-const useClickSound = (enabled = true) => {
-  const play = () => {
-    if (!enabled) return;
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const len = Math.floor(ctx.sampleRate * 0.003);
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const ch = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) {
-      ch[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 4;
-    }
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    const gain = ctx.createGain();
-    gain.gain.value = 0.06;
-    src.connect(gain).connect(ctx.destination);
-    src.start();
-  };
-  return play;
-};
-\`\`\`
-- Make audio configurable via a \`sound\` prop (default: true)
+RULES:
+1. MOTION: motion/react springs only. Default: {type:"spring",stiffness:400,damping:28}. Never CSS transition/duration/ease.
+2. AUDIO: 3ms noise burst on interactions. Add sound:boolean prop.
+3. STYLE: Tailwind CSS, cn() utility, dark mode support.
+4. TYPES: TypeScript interface for props, all optional with defaults.
+5. EXPORT: Single file, default export, self-contained.
 
-### 3. DESIGN TOKENS
-- Colors: CSS variables using ruixen-50 through ruixen-950 or standard Tailwind
-- Dark mode: .dark and [data-theme="dark"] selectors, or dark: prefix
-- Spacing: 4px base, scale: 4, 8, 12, 16, 24, 32, 48, 64
-- Border radius: sm=6px, md=8px, lg=12px, xl=16px, full=9999px
-- Font: Inter, system-ui, -apple-system, sans-serif
+AUDIO_HOOK:
+const useSound=(e=true)=>{const p=()=>{if(!e)return;const c=new AudioContext(),l=c.sampleRate*.003|0,b=c.createBuffer(1,l,c.sampleRate),d=b.getChannelData(0);for(let i=0;i<l;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/l,4);const s=c.createBufferSource();s.buffer=b;const g=c.createGain();g.gain.value=.06;s.connect(g).connect(c.destination);s.start()};return p};
 
-### 4. COMPONENT CONVENTIONS
-- Single file per component
-- TypeScript with explicit interface for props
-- Default export, all props optional with sensible defaults
-- Use cn() utility:
-\`\`\`typescript
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-export function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
-\`\`\`
-- Use class-variance-authority for variants when needed
-- Self-contained: no external UI dependencies beyond motion/react and tailwindcss
-- Tailwind CSS for all styling, no external CSS files
+CN_UTIL:
+const cn=(...a)=>twMerge(clsx(a));
 
-### 5. OUTPUT FORMAT
-Return ONLY the component code as a single TypeScript React file. Include:
-- All imports at the top
-- TypeScript interface for props
-- The cn utility function
-- The audio feedback hook (if interactive)
-- The component with spring animations
-- Default export
+OUTPUT: TypeScript React code only. No markdown, no explanations, no code fences.`;
 
-Do NOT include:
-- Markdown formatting or code fences
-- Explanations before or after the code
-- Multiple files
-- Installation instructions (unless asked)
+// ─── V3: MINIMAL PROMPT (~150 tokens) ────────────────────────────────
+export const RUIXEN_PROMPT_MINIMAL = `RUIXEN: React+TypeScript, motion/react springs {stiffness:400,damping:28}, Tailwind, cn() utility, default export. Output code only.`;
 
-## SPRING PRESETS
+// ─── V1: FULL PROMPT (for complex/new component types) ───────────────
+export const RUIXEN_PROMPT_FULL = `You are the Ruixen UI Component Generator. Create React components with physics-based interactions.
 
-\`\`\`typescript
-// DEFAULT — use for most components
-transition={{ type: "spring", stiffness: 400, damping: 28 }}
+CORE RULES:
+1. SPRING PHYSICS: Use motion/react. Default: { type: "spring", stiffness: 400, damping: 28 }
+   - Snappy (buttons): stiffness: 500, damping: 30, mass: 0.8
+   - Smooth (modals): stiffness: 300, damping: 25
+   - Bouncy (notifications): stiffness: 400, damping: 15
+   - Never use CSS transition, duration, ease-in/out
 
-// SNAPPY — small UI elements (buttons, toggles)
-transition={{ type: "spring", stiffness: 500, damping: 30, mass: 0.8 }}
+2. AUDIO FEEDBACK: Play 3ms noise burst on interactions
+   - Add sound?: boolean prop (default: true)
+   - Use Web Audio API, not <audio> elements
 
-// SMOOTH — larger movements (page transitions, modals)
-transition={{ type: "spring", stiffness: 300, damping: 25, mass: 1 }}
+3. CONVENTIONS:
+   - TypeScript with interface Props
+   - Default export, all props optional
+   - cn() utility for className merging
+   - Tailwind CSS, no external CSS files
+   - Self-contained, no external UI deps
 
-// BOUNCY — playful elements (notifications, badges)
-transition={{ type: "spring", stiffness: 400, damping: 15, mass: 1 }}
+OUTPUT: Clean TypeScript React code only. No markdown, no explanations.`;
 
-// HEAVY — large/important elements (hero sections, panels)
-transition={{ type: "spring", stiffness: 200, damping: 20, mass: 2 }}
-\`\`\`
+// ─── PROMPT SELECTOR ─────────────────────────────────────────────────
+export type PromptLevel = "minimal" | "standard" | "full";
 
-## COMPONENT CATEGORIES FOR REFERENCE
-Buttons (13), Inputs (15), Navigation (15), Hero Sections (8), Pricing (6),
-Calendars (11), Pagination (9), Accordions (6), Avatars (3), Text Effects (3),
-Steppers (2), Drawers (3), Menus (5), Footers (4), Clients (3), Audio (2),
-Chat (2), Checkboxes (7), Trees (3), Banners (4), Breadcrumbs (3), Badges (2),
-Images (2), Video (1), Selects (2), Comments (1), Loaders (3), Backgrounds (6),
-Forms (2), Dialogs (3), Notifications (3), Tabs (3), Cards (4), Docks (2)
+export function getSystemPrompt(level: PromptLevel = "standard"): string {
+  switch (level) {
+    case "minimal":
+      return RUIXEN_PROMPT_MINIMAL;
+    case "full":
+      return RUIXEN_PROMPT_FULL;
+    default:
+      return RUIXEN_SYSTEM_PROMPT;
+  }
+}
 
-Generate beautiful, production-ready components that FEEL physical.`;
+// ─── USER CONFIRMATION PROMPT ────────────────────────────────────────
+export const CONFIRMATION_PROMPT = `Before generating, confirm the plan:
 
-export const RUIXEN_SYSTEM_PROMPT_SHORT = `You are the Ruixen UI Component Generator. Create React components with:
-1. Spring physics (motion/react) — never CSS transitions
-2. Audio feedback (3ms noise burst on interactions)
-3. Tailwind CSS styling
-4. TypeScript with interface for props
-5. Default export, all props optional
+COMPONENT: {name}
+TYPE: {category}
+FEATURES:
+{features}
 
-Spring default: { type: "spring", stiffness: 400, damping: 28 }
-Audio: useClickSound hook with Web Audio API
+Reply with:
+- "proceed" to generate
+- "adjust: [changes]" to modify the plan
+- "cancel" to stop`;
 
-Return ONLY clean TypeScript React code, no markdown or explanations.`;
+// ─── GENERATION WITH CONFIRMATION ────────────────────────────────────
+export interface GenerationPlan {
+  componentName: string;
+  category: string;
+  features: string[];
+  springPreset: keyof typeof RUIXEN_CORE.presets | "default";
+  hasAudio: boolean;
+  estimatedTokens: number;
+}
+
+export function createConfirmationMessage(plan: GenerationPlan): string {
+  return `**Component Plan**
+
+\`${plan.componentName}\` (${plan.category})
+
+**Features:**
+${plan.features.map(f => `- ${f}`).join("\n")}
+
+**Config:**
+- Spring: ${plan.springPreset}
+- Audio: ${plan.hasAudio ? "Yes" : "No"}
+- Est. tokens: ~${plan.estimatedTokens}
+
+Reply **proceed** to generate, or describe adjustments.`;
+}
+
+// ─── TOKEN ESTIMATION ────────────────────────────────────────────────
+export function estimateTokens(prompt: string, complexity: "simple" | "medium" | "complex"): number {
+  const baseTokens = Math.ceil(prompt.length / 4);
+  const multiplier = { simple: 1.5, medium: 2.5, complex: 4 };
+  return Math.ceil(baseTokens * multiplier[complexity]);
+}

@@ -1,8 +1,83 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
-import { RUIXEN_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
+import {
+  getSystemPrompt,
+  createConfirmationMessage,
+  estimateTokens,
+  type PromptLevel,
+  type GenerationPlan,
+} from "@/lib/ai/system-prompt";
 import { extractCodeFromResponse } from "@/lib/utils";
+
+// ─── TYPES ───────────────────────────────────────────────────────
+
+interface GenerateRequest {
+  prompt: string;
+  useOwnKey?: boolean;
+  phase?: "plan" | "generate";
+  plan?: GenerationPlan;
+  promptLevel?: PromptLevel;
+}
+
+// ─── ANALYZE PROMPT FOR PLANNING ─────────────────────────────────
+
+function analyzePrompt(prompt: string): GenerationPlan {
+  const lowerPrompt = prompt.toLowerCase();
+
+  // Detect component type
+  const categories = [
+    "button", "card", "input", "form", "table", "calendar",
+    "dialog", "modal", "notification", "toast", "tab", "menu",
+    "navigation", "hero", "pricing", "footer", "loader", "avatar"
+  ];
+
+  const detectedCategory = categories.find(c => lowerPrompt.includes(c)) || "custom";
+
+  // Detect features
+  const features: string[] = [];
+  if (/animat|motion|spring|hover|press/i.test(prompt)) features.push("Spring animations");
+  if (/click|toggle|select|interactive/i.test(prompt)) features.push("Audio feedback");
+  if (/dark|theme|mode/i.test(prompt)) features.push("Dark mode");
+  if (/responsive|mobile/i.test(prompt)) features.push("Responsive");
+  if (/variant|size|color/i.test(prompt)) features.push("Variants (cva)");
+
+  // Always include these
+  features.push("TypeScript props");
+  features.push("Tailwind CSS");
+
+  // Detect complexity
+  const isComplex = /dashboard|wizard|multi|step|complex|full/i.test(prompt);
+  const isSimple = /simple|basic|minimal|small/i.test(prompt);
+
+  const complexity = isComplex ? "complex" : isSimple ? "simple" : "medium";
+  const estimatedTokens = { simple: 800, medium: 1500, complex: 2500 }[complexity];
+
+  // Detect spring preset
+  const springPreset = /bouncy|playful/i.test(prompt) ? "bouncy" :
+                       /smooth|gentle/i.test(prompt) ? "smooth" :
+                       /snappy|quick/i.test(prompt) ? "snappy" :
+                       /heavy|large/i.test(prompt) ? "heavy" : "default";
+
+  return {
+    componentName: prompt.slice(0, 50).replace(/[^a-zA-Z0-9\s]/g, "").trim(),
+    category: detectedCategory,
+    features,
+    springPreset: springPreset as any,
+    hasAudio: /click|toggle|select|button|interactive/i.test(prompt),
+    estimatedTokens,
+  };
+}
+
+// ─── SELECT OPTIMAL PROMPT LEVEL ─────────────────────────────────
+
+function selectPromptLevel(plan: GenerationPlan): PromptLevel {
+  if (plan.estimatedTokens > 2000) return "full";
+  if (plan.estimatedTokens < 1000) return "minimal";
+  return "standard";
+}
+
+// ─── MAIN HANDLER ────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +91,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { prompt, useOwnKey } = await req.json();
+    const body: GenerateRequest = await req.json();
+    const { prompt, useOwnKey, phase = "plan", plan: providedPlan, promptLevel } = body;
 
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
       return NextResponse.json(
@@ -25,7 +101,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ─── GET USER CREDITS ──────────────────────────────────────
+    // ─── PHASE 1: PLANNING ──────────────────────────────────────
+    if (phase === "plan") {
+      const plan = analyzePrompt(prompt);
+      const confirmationMessage = createConfirmationMessage(plan);
+      const recommendedPromptLevel = selectPromptLevel(plan);
+
+      return NextResponse.json({
+        phase: "plan",
+        plan,
+        message: confirmationMessage,
+        promptLevel: recommendedPromptLevel,
+        estimatedCost: plan.estimatedTokens < 1500 ? "low" : plan.estimatedTokens < 2500 ? "medium" : "high",
+      });
+    }
+
+    // ─── PHASE 2: GENERATION ────────────────────────────────────
+
+    // Get credits
     const { data: credits, error: creditsError } = await supabase
       .from("credits")
       .select("*")
@@ -39,12 +132,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ─── DETERMINE API KEY ─────────────────────────────────────
+    // Determine API key
     let apiKey: string;
     let mode: "managed" | "byok";
 
     if (useOwnKey) {
-      // BYOK mode — use user's own API key
       const { data: profile } = await supabase
         .from("profiles")
         .select("api_key_encrypted")
@@ -58,11 +150,9 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // In production, decrypt the API key here
       apiKey = profile.api_key_encrypted;
       mode = "byok";
     } else {
-      // Managed mode — check credits
       const remaining =
         credits.total_credits + credits.bonus_credits - credits.used_credits;
 
@@ -81,13 +171,18 @@ export async function POST(req: NextRequest) {
       mode = "managed";
     }
 
-    // ─── CALL AI ───────────────────────────────────────────────
+    // Select system prompt based on complexity
+    const plan = providedPlan || analyzePrompt(prompt);
+    const selectedPromptLevel = promptLevel || selectPromptLevel(plan);
+    const systemPrompt = getSystemPrompt(selectedPromptLevel);
+
+    // Call AI with optimized prompt
     const anthropic = new Anthropic({ apiKey });
 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 8192,
-      system: RUIXEN_SYSTEM_PROMPT,
+      max_tokens: plan.estimatedTokens < 1500 ? 4096 : 8192,
+      system: systemPrompt,
       messages: [
         {
           role: "user",
@@ -104,10 +199,9 @@ export async function POST(req: NextRequest) {
       })
       .join("\n");
 
-    // Extract clean code from response
     const generatedCode = extractCodeFromResponse(rawResponse);
 
-    // ─── DEDUCT CREDIT (managed mode only) ─────────────────────
+    // Deduct credit (managed mode only)
     if (mode === "managed") {
       await supabase
         .from("credits")
@@ -118,7 +212,7 @@ export async function POST(req: NextRequest) {
         .eq("user_id", user.id);
     }
 
-    // ─── SAVE GENERATION ───────────────────────────────────────
+    // Save generation
     const { data: generation } = await supabase
       .from("generations")
       .insert({
@@ -131,12 +225,14 @@ export async function POST(req: NextRequest) {
         metadata: {
           inputTokens: response.usage.input_tokens,
           outputTokens: response.usage.output_tokens,
+          promptLevel: selectedPromptLevel,
+          plan,
         },
       })
       .select()
       .single();
 
-    // ─── RETURN RESULT ─────────────────────────────────────────
+    // Return result
     const remaining =
       mode === "managed"
         ? credits.total_credits +
@@ -146,11 +242,17 @@ export async function POST(req: NextRequest) {
         : null;
 
     return NextResponse.json({
+      phase: "complete",
       code: generatedCode,
       generationId: generation?.id,
       credits: {
         remaining,
         mode,
+      },
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        promptLevel: selectedPromptLevel,
       },
     });
   } catch (error: unknown) {

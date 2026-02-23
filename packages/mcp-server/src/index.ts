@@ -47,6 +47,53 @@ interface CategoryPattern {
   doNot?: string[];
 }
 
+type DetailLevel = "minimal" | "standard" | "full";
+
+// ─── COMPRESSED DATA HELPERS ─────────────────────────────────────
+
+/**
+ * Returns minimal design system (~200 tokens vs ~2000 for full)
+ */
+function getMinimalDesignSystem() {
+  const ds = designSystem as any;
+  return {
+    spring: ds.motion.defaultConfig,
+    presets: {
+      snappy: "s:500,d:30,m:0.8",
+      smooth: "s:300,d:25,m:1",
+      bouncy: "s:400,d:15,m:1",
+      heavy: "s:200,d:20,m:2",
+    },
+    audio: `useSound: 3ms noise, gain:${ds.audio.config.gain}`,
+    import: ds.motion.importStatement,
+    rules: [
+      "Never CSS transition/duration/ease",
+      "Always motion/react springs",
+      "Audio on interactions",
+    ],
+  };
+}
+
+/**
+ * Returns standard design system (~500 tokens)
+ */
+function getStandardDesignSystem() {
+  const ds = designSystem as any;
+  return {
+    motion: {
+      default: ds.motion.defaultConfig,
+      presets: ds.motion.presets,
+      import: ds.motion.importStatement,
+    },
+    audio: {
+      config: ds.audio.config,
+      hook: "const useSound=(e=true)=>{const p=()=>{if(!e)return;const c=new AudioContext(),l=c.sampleRate*.003|0,b=c.createBuffer(1,l,c.sampleRate),d=b.getChannelData(0);for(let i=0;i<l;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/l,4);const s=c.createBufferSource();s.buffer=b;const g=c.createGain();g.gain.value=.06;s.connect(g).connect(c.destination);s.start()};return p};",
+    },
+    conventions: ds.conventions,
+    cn: "const cn=(...a)=>twMerge(clsx(a));",
+  };
+}
+
 // ─── TOOL DEFINITIONS ────────────────────────────────────────────
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -54,38 +101,32 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "getDesignSystem",
       description:
-        "Returns the complete Ruixen UI design system: spring physics configs, audio feedback patterns, design tokens, color system, typography, spacing, and component conventions. CALL THIS FIRST before generating any component — it contains the rules that make a component feel like Ruixen.",
+        "Returns Ruixen design system rules. Use detail='minimal' for token efficiency (~200 tokens), 'standard' for balanced (~500 tokens), 'full' for complete spec (~2000 tokens). Default: standard.",
       inputSchema: {
         type: "object" as const,
-        properties: {},
+        properties: {
+          detail: {
+            type: "string",
+            enum: ["minimal", "standard", "full"],
+            description: "Level of detail: minimal (200 tokens), standard (500 tokens), full (2000 tokens)",
+          },
+        },
       },
     },
     {
       name: "getComponentPattern",
       description:
-        "Returns the Ruixen pattern for building a specific type of component (e.g., 'buttons', 'cards', 'pagination', 'dialogs'). Includes spring configs, animation patterns, audio rules, do's and don'ts for that component type.",
+        "Returns pattern for a component category. Includes spring configs, animation rules, do's and don'ts.",
       inputSchema: {
         type: "object" as const,
         properties: {
           category: {
             type: "string",
-            description:
-              "Component category: buttons, cards, inputs, pagination, tabs, dialogs, notifications, loaders, backgrounds, navigation, docks, calendars, tables, forms, heroSections, pricingSections, accordions, avatars, textEffects, steppers, drawers, menus, footers, clients, audio, chat, checkboxes, trees, banners, breadcrumbs, badges, images, video, selects, comments",
+            description: "Category: buttons, cards, inputs, pagination, tabs, dialogs, notifications, loaders, backgrounds, navigation, docks, calendars, tables, forms, heroSections, pricingSections",
           },
-        },
-        required: ["category"],
-      },
-    },
-    {
-      name: "getExamples",
-      description:
-        "Returns example component names and their key patterns for a given category. Use these as reference when generating new components. Also returns install commands.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          category: {
-            type: "string",
-            description: "Component category to get examples for",
+          includeExamples: {
+            type: "boolean",
+            description: "Include example component names (default: false to save tokens)",
           },
         },
         required: ["category"],
@@ -94,13 +135,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "searchComponents",
       description:
-        "Search across all 170+ Ruixen UI components by name or tag. Returns matching components with their install commands for all 4 registry variants (Tailwind v4, v3, Base UI, Base UI + Tailwind v3).",
+        "Search components by name/tag. Returns matching components with install commands.",
       inputSchema: {
         type: "object" as const,
         properties: {
           query: {
             type: "string",
-            description: "Search query (component name, tag, or description keyword)",
+            description: "Search query",
+          },
+          limit: {
+            type: "number",
+            description: "Max results (default: 10)",
           },
         },
         required: ["query"],
@@ -109,28 +154,47 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "validateComponent",
       description:
-        "Validates generated component code against the Ruixen design system rules. Returns a list of issues if the code doesn't follow Ruixen conventions (e.g., using CSS transitions instead of springs, missing audio feedback, wrong token usage).",
+        "Validates component code against Ruixen rules. Returns issues and warnings.",
       inputSchema: {
         type: "object" as const,
         properties: {
           code: {
             type: "string",
-            description: "The React component code to validate",
+            description: "React component code to validate",
           },
         },
         required: ["code"],
       },
     },
     {
+      name: "planComponent",
+      description:
+        "Creates a generation plan for user confirmation before generating. Returns structured plan with estimated tokens.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          description: {
+            type: "string",
+            description: "What component the user wants",
+          },
+          category: {
+            type: "string",
+            description: "Component category",
+          },
+        },
+        required: ["description"],
+      },
+    },
+    {
       name: "getInstallCommand",
       description:
-        "Returns the exact install command for any Ruixen UI component across all 4 registry variants.",
+        "Get install command for a Ruixen component.",
       inputSchema: {
         type: "object" as const,
         properties: {
           componentName: {
             type: "string",
-            description: "The component name (e.g., 'gooey-pagination', 'spring-button')",
+            description: "Component name",
           },
         },
         required: ["componentName"],
@@ -146,18 +210,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   switch (name) {
     case "getDesignSystem": {
+      const detail = ((args as { detail?: string }).detail || "standard") as DetailLevel;
+
+      let data: any;
+      switch (detail) {
+        case "minimal":
+          data = getMinimalDesignSystem();
+          break;
+        case "full":
+          data = designSystem;
+          break;
+        default:
+          data = getStandardDesignSystem();
+      }
+
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(designSystem, null, 2),
+            text: JSON.stringify(data, null, detail === "full" ? 2 : 0),
           },
         ],
       };
     }
 
     case "getComponentPattern": {
-      const category = (args as { category: string }).category;
+      const { category, includeExamples } = args as { category: string; includeExamples?: boolean };
       const categoriesMap = patterns.categories as Record<string, CategoryPattern>;
       const pattern = categoriesMap[category];
 
@@ -166,102 +244,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: `Unknown category: ${category}. Available categories: ${Object.keys(patterns.categories).join(", ")}`,
+              text: `Unknown: ${category}. Available: ${Object.keys(patterns.categories).join(",")}`,
             },
           ],
         };
       }
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                category,
-                ...pattern,
-                designSystemReminder: {
-                  spring: (designSystem as any).motion.defaultConfig,
-                  audioImplementation: (designSystem as any).audio.implementation,
-                  conventions: (designSystem as any).conventions,
-                },
-              },
-              null,
-              2
-            ),
-          },
-        ],
+      const response: any = {
+        category,
+        pattern: pattern.pattern,
+        doNot: pattern.doNot || [],
       };
-    }
 
-    case "getExamples": {
-      const cat = (args as { category: string }).category;
-      const categoriesMap = patterns.categories as Record<string, CategoryPattern>;
-      const p = categoriesMap[cat];
-
-      if (!p) {
-        return {
-          content: [{ type: "text", text: `Unknown category: ${cat}. Available: ${Object.keys(patterns.categories).join(", ")}` }],
-        };
+      if (includeExamples) {
+        response.examples = pattern.exampleNames;
       }
 
-      const componentsList = (components as { components: Component[] }).components;
-      const examples = componentsList
-        .filter((c: Component) => c.category === cat)
-        .map((c: Component) => ({
-          name: c.name,
-          description: c.description,
-          install: c.install,
-          dependencies: c.dependencies,
-        }));
+      // Add minimal spring reminder
+      response.spring = (designSystem as any).motion.defaultConfig;
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify({
-              category: cat,
-              patternGuidance: p.pattern,
-              doNot: p.doNot || [],
-              examples
-            }, null, 2),
+            text: JSON.stringify(response, null, 0),
           },
         ],
       };
     }
 
     case "searchComponents": {
-      const query = ((args as { query: string }).query || "").toLowerCase();
+      const { query, limit = 10 } = args as { query: string; limit?: number };
+      const q = query.toLowerCase();
       const componentsList = (components as { components: Component[] }).components;
 
-      const results = componentsList.filter(
-        (c: Component) =>
-          c.name.toLowerCase().includes(query) ||
-          c.description.toLowerCase().includes(query) ||
-          c.tags.some((t: string) => t.toLowerCase().includes(query)) ||
-          c.category.toLowerCase().includes(query)
-      );
+      const results = componentsList
+        .filter(
+          (c: Component) =>
+            c.name.toLowerCase().includes(q) ||
+            c.tags.some((t: string) => t.toLowerCase().includes(q)) ||
+            c.category.toLowerCase().includes(q)
+        )
+        .slice(0, limit)
+        .map((c: Component) => ({
+          name: c.name,
+          cat: c.category,
+          cmd: c.install.tw4,
+        }));
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              {
-                query,
-                resultCount: results.length,
-                results: results.slice(0, 25).map((c: Component) => ({
-                  name: c.name,
-                  category: c.category,
-                  description: c.description,
-                  install: c.install,
-                  dependencies: c.dependencies,
-                })),
-                tip: results.length > 25 ? `Showing first 25 of ${results.length} results. Try a more specific query.` : undefined,
-              },
-              null,
-              2
-            ),
+            text: JSON.stringify({ q: query, n: results.length, r: results }, null, 0),
           },
         ],
       };
@@ -270,102 +305,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case "validateComponent": {
       const code = (args as { code: string }).code;
       const issues: string[] = [];
-      const warnings: string[] = [];
+      const ok: string[] = [];
 
-      // Check for CSS transitions (anti-pattern in Ruixen)
-      if (/transition\s*[:=]/.test(code) && !/transition\s*[:=]\s*\{.*type.*spring/s.test(code)) {
-        issues.push(
-          "MOTION: Using CSS transition instead of spring physics. Replace with motion/react spring: transition={{ type: 'spring', stiffness: 400, damping: 28 }}"
-        );
+      // Critical checks
+      if (/transition-duration|ease-in|ease-out|cubic-bezier/.test(code)) {
+        issues.push("CSS timing found - use spring");
       }
-
-      if (/transition-duration|transition-all|ease-in|ease-out|ease-in-out|cubic-bezier/.test(code)) {
-        issues.push(
-          "MOTION: Found CSS timing function. Ruixen components use spring physics — duration and easing are determined by stiffness/damping/mass, not fixed timing."
-        );
+      if (!/motion|framer-motion/.test(code)) {
+        issues.push("No motion/react import");
       }
-
-      // Check for duration-based animations
-      if (/duration:\s*\d|duration=|\d+ms|\d+s/.test(code) && !/duration.*0/.test(code)) {
-        warnings.push(
-          "MOTION: Found duration-based animation. Consider using spring physics instead for more natural motion."
-        );
-      }
-
-      // Check for spring physics
-      if (!/motion\.|framer-motion|motion\/react/.test(code)) {
-        issues.push(
-          "MOTION: No motion/react import found. Ruixen components require spring animations. Add: import { motion } from 'motion/react';"
-        );
-      }
-
-      // Check for audio feedback
-      if (/onClick|onPointerDown|onChange|onToggle/.test(code)) {
-        if (!/AudioContext|playClick|useClickSound|sound/.test(code)) {
-          warnings.push(
-            "AUDIO: Interactive component detected but no audio feedback found. Ruixen components play a 3ms noise burst on state changes. Consider adding the audio feedback pattern from getDesignSystem()."
-          );
-        }
-      }
-
-      // Check for proper import structure
-      if (/from\s+['"]framer-motion['"]/.test(code)) {
-        warnings.push(
-          "IMPORT: Using 'framer-motion' import. Ruixen prefers 'motion/react' (the new package name): import { motion } from 'motion/react';"
-        );
-      }
-
-      // Check for cn utility usage
-      if (/className=\{.*\+.*\}|className=\{`/.test(code) && !/cn\(/.test(code)) {
-        warnings.push(
-          "CONVENTION: Using string concatenation for className. Use cn() utility (clsx + tailwind-merge) for cleaner conditional classes."
-        );
-      }
-
-      // Check for default export
       if (!/export\s+default/.test(code)) {
-        warnings.push(
-          "CONVENTION: Missing default export. Ruixen components use default export with no required props."
-        );
+        issues.push("No default export");
       }
 
-      // Check for TypeScript interface
-      if (!/interface\s+\w+Props/.test(code)) {
-        warnings.push(
-          "TYPESCRIPT: No props interface found. Ruixen components use explicit TypeScript interfaces for props."
-        );
-      }
-
-      // Check for AnimatePresence for conditional rendering
-      if (/\{.*&&.*<motion\./.test(code) || /\{.*\?.*<motion\./.test(code)) {
-        if (!/AnimatePresence/.test(code)) {
-          warnings.push(
-            "MOTION: Conditional motion component detected without AnimatePresence. Wrap conditional motion elements with AnimatePresence for proper exit animations."
-          );
-        }
-      }
+      // Positive checks
+      if (/stiffness.*damping|type.*spring/.test(code)) ok.push("Spring OK");
+      if (/AudioContext|useSound/.test(code)) ok.push("Audio OK");
+      if (/interface.*Props/.test(code)) ok.push("Types OK");
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              {
-                valid: issues.length === 0,
-                issueCount: issues.length,
-                warningCount: warnings.length,
-                issues,
-                warnings,
-                tip:
-                  issues.length === 0 && warnings.length === 0
-                    ? "Component follows the Ruixen design system."
-                    : issues.length === 0
-                    ? "Component is valid but has minor suggestions. The warnings above are optional improvements."
-                    : "Fix the issues above to make this component feel like Ruixen. Call getDesignSystem() for the full spec.",
-              },
-              null,
-              2
-            ),
+            text: JSON.stringify({
+              valid: issues.length === 0,
+              issues,
+              ok,
+            }, null, 0),
+          },
+        ],
+      };
+    }
+
+    case "planComponent": {
+      const { description, category } = args as { description: string; category?: string };
+
+      // Analyze the description to create a plan
+      const hasAnimation = /animat|motion|spring|hover|click|press/i.test(description);
+      const hasInteraction = /button|click|toggle|select|input|form/i.test(description);
+      const isComplex = /dashboard|form|table|calendar|wizard/i.test(description);
+
+      const features: string[] = [];
+      if (hasAnimation) features.push("Spring animations");
+      if (hasInteraction) features.push("Audio feedback");
+      features.push("Dark mode support");
+      features.push("TypeScript props");
+
+      const complexity = isComplex ? "complex" : hasInteraction ? "medium" : "simple";
+      const estimatedTokens = { simple: 800, medium: 1500, complex: 2500 }[complexity];
+
+      const plan = {
+        component: description.slice(0, 50),
+        category: category || "custom",
+        features,
+        spring: hasAnimation ? "bouncy" : "default",
+        audio: hasInteraction,
+        tokens: estimatedTokens,
+        prompt: complexity === "complex" ? "full" : "standard",
+      };
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              plan,
+              confirm: "Reply 'proceed' to generate, or describe adjustments",
+            }, null, 2),
           },
         ],
       };
@@ -380,31 +386,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       );
 
       if (!comp) {
-        // Try fuzzy match
-        const fuzzyMatches = componentsList.filter(
-          (c: Component) => c.name.toLowerCase().includes(componentName.toLowerCase())
-        );
-
-        if (fuzzyMatches.length > 0) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  error: `Exact match for "${componentName}" not found.`,
-                  didYouMean: fuzzyMatches.slice(0, 5).map((c: Component) => c.name),
-                  suggestion: `Try one of the above component names, or use searchComponents to find what you're looking for.`,
-                }, null, 2),
-              },
-            ],
-          };
-        }
+        const similar = componentsList
+          .filter((c: Component) => c.name.toLowerCase().includes(componentName.toLowerCase()))
+          .slice(0, 3)
+          .map((c: Component) => c.name);
 
         return {
           content: [
             {
               type: "text",
-              text: `Component "${componentName}" not found. Use searchComponents to find available components.`,
+              text: similar.length
+                ? `Not found. Similar: ${similar.join(", ")}`
+                : `Not found: ${componentName}`,
             },
           ],
         };
@@ -414,18 +407,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              {
-                component: comp.name,
-                category: comp.category,
-                description: comp.description,
-                install: comp.install,
-                dependencies: comp.dependencies,
-                note: "Default (tw4) is Tailwind v4. Use tw3 for Tailwind v3, baseui for Base UI primitives, baseui-tw3 for Base UI + Tailwind v3.",
-              },
-              null,
-              2
-            ),
+            text: JSON.stringify({
+              name: comp.name,
+              cmd: comp.install.tw4,
+              deps: comp.dependencies,
+            }, null, 0),
           },
         ],
       };
@@ -433,7 +419,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     default:
       return {
-        content: [{ type: "text", text: `Unknown tool: ${name}` }],
+        content: [{ type: "text", text: `Unknown: ${name}` }],
       };
   }
 });
@@ -443,7 +429,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Ruixen UI MCP Server running...");
+  console.error("Ruixen MCP running");
 }
 
 main().catch(console.error);
