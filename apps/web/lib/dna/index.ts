@@ -15,3 +15,4 @@ export * from "./enrichment";
 export * from "./parser";
 export * from "./registry";
 export * from "./validation";
+export * from "./replay";
