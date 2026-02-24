@@ -1,6 +1,10 @@
 @import "tailwindcss";
 
-/* Strict Black & White Theme - shadcn/ui style */
+/* ═══════════════════════════════════════════════════════════════
+   RUIXEN MCP — Design Tokens
+   Every value is intentional. Every pixel earns its place.
+   ═══════════════════════════════════════════════════════════════ */
+
 :root {
   --background: 0 0% 100%;
   --foreground: 0 0% 3.9%;
@@ -21,29 +25,29 @@
   --border: 0 0% 89.8%;
   --input: 0 0% 89.8%;
   --ring: 0 0% 3.9%;
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 }
 
 .dark {
-  --background: 0 0% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 0 0% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --popover: 0 0% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 14.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 14.9%;
-  --muted-foreground: 0 0% 63.9%;
-  --accent: 0 0% 14.9%;
-  --accent-foreground: 0 0% 98%;
+  --background: 0 0% 4%;
+  --foreground: 0 0% 96%;
+  --card: 0 0% 5.5%;
+  --card-foreground: 0 0% 96%;
+  --popover: 0 0% 5.5%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 0 0% 96%;
+  --primary-foreground: 0 0% 6%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 55%;
+  --accent: 0 0% 12%;
+  --accent-foreground: 0 0% 96%;
   --destructive: 0 62.8% 30.6%;
   --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 14.9%;
-  --input: 0 0% 14.9%;
-  --ring: 0 0% 83.1%;
+  --border: 0 0% 14%;
+  --input: 0 0% 14%;
+  --ring: 0 0% 80%;
 }
 
 @theme inline {
@@ -66,28 +70,39 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-  --font-sans: ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 4px);
-  --radius-xl: calc(var(--radius) + 8px);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
 }
+
+/* ─── Base ──────────────────────────────────────────────────── */
 
 * {
   border-color: hsl(var(--border));
 }
 
+::selection {
+  background: hsl(var(--foreground) / 0.12);
+  color: hsl(var(--foreground));
+}
+
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-feature-settings: "rlig" 1, "calt" 1;
+  font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Scrollbar - minimal */
+/* ─── Scrollbar — whisper thin ──────────────────────────────── */
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -95,17 +110,66 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
-  border-radius: 3px;
+  background: hsl(var(--foreground) / 0.08);
+  border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.3);
+  background: hsl(var(--foreground) / 0.15);
 }
 
-/* Code syntax highlighting - monochrome */
+/* ─── Focus Glow ────────────────────────────────────────────── */
+
+.glow-input {
+  transition: box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glow-input:focus-within {
+  border-color: hsl(var(--foreground) / 0.2);
+  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.05),
+              0 0 24px -6px hsl(var(--foreground) / 0.06);
+}
+
+/* ─── Keyframes ─────────────────────────────────────────────── */
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Dot Pattern ───────────────────────────────────────────── */
+
+.dot-pattern {
+  background-image: radial-gradient(
+    hsl(var(--foreground) / 0.07) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+/* ─── Code Syntax — monochrome with depth ───────────────────── */
+
 .hljs {
-  color: hsl(var(--foreground));
+  color: hsl(var(--foreground) / 0.85);
 }
 .hljs-keyword,
 .hljs-selector-tag,
@@ -114,10 +178,12 @@ body {
 .hljs-doctag,
 .hljs-name,
 .hljs-strong {
-  font-weight: 600;
+  color: hsl(var(--foreground));
+  font-weight: 500;
 }
 .hljs-comment {
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--foreground) / 0.3);
+  font-style: italic;
 }
 .hljs-string,
 .hljs-title.class_,
@@ -127,17 +193,18 @@ body {
 .hljs-selector-class,
 .hljs-selector-pseudo,
 .hljs-addition {
-  color: hsl(var(--foreground) / 0.8);
+  color: hsl(var(--foreground) / 0.7);
 }
 .hljs-number,
 .hljs-literal,
 .hljs-variable,
 .hljs-template-variable,
 .hljs-attr {
-  color: hsl(var(--foreground) / 0.7);
+  color: hsl(var(--foreground) / 0.6);
 }
 
-/* Chat layout */
+/* ─── Chat layout ───────────────────────────────────────────── */
+
 .chat-layout {
   display: grid;
   grid-template-columns: 260px 1fr 400px;
@@ -156,7 +223,8 @@ body {
   }
 }
 
-/* Message styling */
+/* ─── Message styling ───────────────────────────────────────── */
+
 .prose-chat {
   font-size: 0.9375rem;
   line-height: 1.625;

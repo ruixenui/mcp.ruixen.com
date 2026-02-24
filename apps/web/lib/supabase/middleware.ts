@@ -29,22 +29,31 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // DEV MODE: Skip auth checks for now
-  // TODO: Re-enable auth protection when Supabase is configured
-  // const {
-  //   data: { user },
-  // } = await supabase.auth.getUser();
+  const isProtectedRoute =
+    request.nextUrl.pathname.startsWith("/dashboard") ||
+    request.nextUrl.pathname.startsWith("/playground");
 
-  // // Protect dashboard routes
-  // if (
-  //   !user &&
-  //   (request.nextUrl.pathname.startsWith("/dashboard") ||
-  //     request.nextUrl.pathname.startsWith("/playground"))
-  // ) {
-  //   const url = request.nextUrl.clone();
-  //   url.pathname = "/login";
-  //   return NextResponse.redirect(url);
-  // }
+  // If Supabase is not configured, still protect routes — redirect to login
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  if (!supabaseUrl || supabaseUrl.includes("placeholder")) {
+    if (isProtectedRoute) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
+    return supabaseResponse;
+  }
+
+  // Supabase configured — check actual auth
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user && isProtectedRoute) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
 
   return supabaseResponse;
 }

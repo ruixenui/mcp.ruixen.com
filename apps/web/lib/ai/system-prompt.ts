@@ -1,12 +1,12 @@
 /**
- * Ruixen UI System Prompts
+ * Ruixen UI System Prompts — Token-optimized
  *
- * V1: Full verbose prompt (~3000 tokens) - for complex generations
- * V2: Compressed prompt (~400 tokens) - for standard generations
- * V3: Minimal prompt (~150 tokens) - for simple modifications
+ * V1 (full):     ~400 tokens — complex + data viz
+ * V2 (standard): ~250 tokens — most generations
+ * V3 (minimal):  ~60 tokens  — simple tweaks
  */
 
-// ─── CORE RULES (Shared reference, not sent to AI) ──────────────────
+// ─── CORE DESIGN TOKENS (Reference, not sent to AI) ─────────────
 export const RUIXEN_CORE = {
   spring: { type: "spring", stiffness: 400, damping: 28, mass: 1 },
   presets: {
@@ -22,51 +22,62 @@ export const RUIXEN_CORE = {
   },
 } as const;
 
-// ─── V2: COMPRESSED PROMPT (~400 tokens) ─────────────────────────────
-export const RUIXEN_SYSTEM_PROMPT = `RUIXEN UI GENERATOR
+// Backtick-free fence token (hex escapes avoid confusing IDE parsers)
+const FENCE = "\x60\x60\x60";
 
-RULES:
-1. MOTION: motion/react springs only. Default: {type:"spring",stiffness:400,damping:28}. Never CSS transition/duration/ease.
-2. AUDIO: 3ms noise burst on interactions. Add sound:boolean prop.
-3. STYLE: Tailwind CSS, cn() utility, dark mode support.
-4. TYPES: TypeScript interface for props, all optional with defaults.
-5. EXPORT: Single file, default export, self-contained.
+// ─── Shared fragments ───────────────────────────────────────────
 
-AUDIO_HOOK:
-const useSound=(e=true)=>{const p=()=>{if(!e)return;const c=new AudioContext(),l=c.sampleRate*.003|0,b=c.createBuffer(1,l,c.sampleRate),d=b.getChannelData(0);for(let i=0;i<l;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/l,4);const s=c.createBufferSource();s.buffer=b;const g=c.createGain();g.gain.value=.06;s.connect(g).connect(c.destination);s.start()};return p};
+const DESIGN_CORE = [
+  "RUIXEN. Craft React components like Rauno Frieberg: minimal, precise, intentional. Restraint over excess.",
+  "",
+  "STYLE:",
+  "- Font: Inter. 11px labels(tracking-wide,text-muted-foreground) 13px body 20-28px heads(tracking-tight,font-semibold). font-mono+tabular-nums for data",
+  "- Color: CSS vars only(text-foreground,bg-card,border-border). Hierarchy: /70 2nd /40 3rd. Semantic: emerald-400/70(+) rose-400/70(-). NEVER green-500/red-500/blue-600",
+  "- Layout: rounded-xl border-border p-5. 4px grid. gap-3~6. White space is a feature",
+  "- Cards: bg-card or bg-foreground/[0.03]. hover:bg-foreground/[0.06]. No drop shadows",
+  "",
+  "MOTION(motion/react):",
+  "- Spring: {type:\"spring\",stiffness:400,damping:28}",
+  "- Enter: {opacity:0,y:8}->{1,0} stagger i*0.05. Hover: bg shift or y:-1. Press: scale(0.98)",
+  "- whileHover/whileTap on all clickables. layoutId for tab indicators",
+  "",
+  "AUDIO: sound?:boolean=true. Hook:",
+  "const useSound=(e=true)=>{const p=()=>{if(!e)return;const c=new AudioContext(),l=c.sampleRate*.003|0,b=c.createBuffer(1,l,c.sampleRate),d=b.getChannelData(0);for(let i=0;i<l;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/l,4);const s=c.createBufferSource();s.buffer=b;const g=c.createGain();g.gain.value=.06;s.connect(g).connect(c.destination);s.start()};return p};",
+  "",
+  "CODE: TS interface(optional props+defaults), cn() utility, Tailwind only, single-file default-export. Imports: react, motion/react, lucide-react ONLY. Realistic mock data.",
+].join("\n");
 
-CN_UTIL:
-const cn=(...a)=>twMerge(clsx(a));
+const DATA_VIZ_RULES = [
+  "",
+  "DATA VIZ:",
+  "- ALWAYS inline SVG+viewBox. NEVER div-based bars",
+  "- Container: rounded-xl border-border bg-card p-6. Grid: horizontal lines stroke:foreground/[0.06] dasharray:4,4",
+  "- Axis: text-[10px] font-mono text-muted-foreground. Bars: <rect rx=3> gap:6px animate scaleY:0->1 stagger",
+  "- Lines: strokeWidth:2 linecap/linejoin:round. Area: linearGradient 25%->0% opacity",
+  "- Hover: tooltip bg-popover/95 backdrop-blur-sm rounded-lg p-3 text-xs shadow-lg + vertical crosshair(foreground/10)",
+  "- Legend: dot(w-2 h-2 rounded-full)+text-xs. Numbers: toLocaleString(), toFixed(2)",
+  '- Palette: ["hsl(217 91% 65%)","hsl(160 60% 50%)","hsl(280 65% 65%)","hsl(30 80% 60%)","hsl(350 65% 60%)"]',
+  "- Dashboard: grid-cols-2 lg:3 gap-4. Summary cards: icon+label(xs,uppercase)+value(xl,semibold,tabular-nums)+change(xs,semantic color)",
+  "- Mock: real tickers(AAPL,NVDA,MSFT,GOOGL), realistic prices($140-500), changes(+/-0.5~5%)",
+].join("\n");
 
-OUTPUT: TypeScript React code only. No markdown, no explanations, no code fences.`;
+const OUTPUT_RULE = "\nOUTPUT: Single " + FENCE + "tsx fenced code block. No text outside the fence.";
 
-// ─── V3: MINIMAL PROMPT (~150 tokens) ────────────────────────────────
-export const RUIXEN_PROMPT_MINIMAL = `RUIXEN: React+TypeScript, motion/react springs {stiffness:400,damping:28}, Tailwind, cn() utility, default export. Output code only.`;
+// ─── V2: STANDARD (~250 tokens) ─────────────────────────────────
+export const RUIXEN_SYSTEM_PROMPT = DESIGN_CORE + OUTPUT_RULE;
 
-// ─── V1: FULL PROMPT (for complex/new component types) ───────────────
-export const RUIXEN_PROMPT_FULL = `You are the Ruixen UI Component Generator. Create React components with physics-based interactions.
+// ─── V3: MINIMAL (~60 tokens) ───────────────────────────────────
+export const RUIXEN_PROMPT_MINIMAL =
+  "RUIXEN: crafted React+TS like Rauno Frieberg. Minimal, intentional. " +
+  "CSS vars, opacity hierarchy(/70,/40). emerald-400/70(+) rose-400/70(-). " +
+  "NO saturated colors. rounded-xl, font-mono numbers, tabular-nums. " +
+  "motion/react spring{stiffness:400,damping:28}. cn() utility, default-export. " +
+  "Output: single " + FENCE + "tsx fence.";
 
-CORE RULES:
-1. SPRING PHYSICS: Use motion/react. Default: { type: "spring", stiffness: 400, damping: 28 }
-   - Snappy (buttons): stiffness: 500, damping: 30, mass: 0.8
-   - Smooth (modals): stiffness: 300, damping: 25
-   - Bouncy (notifications): stiffness: 400, damping: 15
-   - Never use CSS transition, duration, ease-in/out
+// ─── V1: FULL (~400 tokens, includes data viz) ──────────────────
+export const RUIXEN_PROMPT_FULL = DESIGN_CORE + DATA_VIZ_RULES + OUTPUT_RULE;
 
-2. AUDIO FEEDBACK: Play 3ms noise burst on interactions
-   - Add sound?: boolean prop (default: true)
-   - Use Web Audio API, not <audio> elements
-
-3. CONVENTIONS:
-   - TypeScript with interface Props
-   - Default export, all props optional
-   - cn() utility for className merging
-   - Tailwind CSS, no external CSS files
-   - Self-contained, no external UI deps
-
-OUTPUT: Clean TypeScript React code only. No markdown, no explanations.`;
-
-// ─── PROMPT SELECTOR ─────────────────────────────────────────────────
+// ─── PROMPT SELECTOR ────────────────────────────────────────────
 export type PromptLevel = "minimal" | "standard" | "full";
 
 export function getSystemPrompt(level: PromptLevel = "standard"): string {
@@ -80,20 +91,22 @@ export function getSystemPrompt(level: PromptLevel = "standard"): string {
   }
 }
 
-// ─── USER CONFIRMATION PROMPT ────────────────────────────────────────
-export const CONFIRMATION_PROMPT = `Before generating, confirm the plan:
+// ─── USER CONFIRMATION PROMPT ───────────────────────────────────
+export const CONFIRMATION_PROMPT = [
+  "Before generating, confirm the plan:",
+  "",
+  "COMPONENT: {name}",
+  "TYPE: {category}",
+  "FEATURES:",
+  "{features}",
+  "",
+  "Reply with:",
+  "- \"proceed\" to generate",
+  "- \"adjust: [changes]\" to modify the plan",
+  "- \"cancel\" to stop",
+].join("\n");
 
-COMPONENT: {name}
-TYPE: {category}
-FEATURES:
-{features}
-
-Reply with:
-- "proceed" to generate
-- "adjust: [changes]" to modify the plan
-- "cancel" to stop`;
-
-// ─── GENERATION WITH CONFIRMATION ────────────────────────────────────
+// ─── GENERATION WITH CONFIRMATION ───────────────────────────────
 export interface GenerationPlan {
   componentName: string;
   category: string;
@@ -104,23 +117,55 @@ export interface GenerationPlan {
 }
 
 export function createConfirmationMessage(plan: GenerationPlan): string {
-  return `**Component Plan**
-
-\`${plan.componentName}\` (${plan.category})
-
-**Features:**
-${plan.features.map(f => `- ${f}`).join("\n")}
-
-**Config:**
-- Spring: ${plan.springPreset}
-- Audio: ${plan.hasAudio ? "Yes" : "No"}
-- Est. tokens: ~${plan.estimatedTokens}
-
-Reply **proceed** to generate, or describe adjustments.`;
+  return [
+    "**Component Plan**",
+    "",
+    '"' + plan.componentName + '" (' + plan.category + ")",
+    "",
+    "**Features:**",
+    plan.features.map((f) => "- " + f).join("\n"),
+    "",
+    "**Config:**",
+    "- Spring: " + plan.springPreset,
+    "- Audio: " + (plan.hasAudio ? "Yes" : "No"),
+    "- Est. tokens: ~" + plan.estimatedTokens,
+    "",
+    "Reply **proceed** to generate, or describe adjustments.",
+  ].join("\n");
 }
 
-// ─── TOKEN ESTIMATION ────────────────────────────────────────────────
-export function estimateTokens(prompt: string, complexity: "simple" | "medium" | "complex"): number {
+// ─── LEARNED PATTERN FORMATTER ──────────────────────────────────
+
+export function formatLearnedPatterns(
+  category: string,
+  pattern: Record<string, string>,
+  springPreset?: { stiffness: number; damping: number },
+  successRate?: number
+): string {
+  if (!pattern || Object.keys(pattern).length === 0) return "";
+
+  const entries = Object.entries(pattern)
+    .map(function (e) { return e[0] + ":" + e[1]; })
+    .join(", ");
+
+  const parts = ["\nLEARNED(" + category + "): " + entries];
+
+  if (springPreset) {
+    parts.push("spring{s:" + springPreset.stiffness + ",d:" + springPreset.damping + "}");
+  }
+
+  if (successRate !== undefined) {
+    parts.push("(" + Math.round(successRate * 100) + "% success)");
+  }
+
+  return parts.join(" ");
+}
+
+// ─── TOKEN ESTIMATION ───────────────────────────────────────────
+export function estimateTokens(
+  prompt: string,
+  complexity: "simple" | "medium" | "complex"
+): number {
   const baseTokens = Math.ceil(prompt.length / 4);
   const multiplier = { simple: 1.5, medium: 2.5, complex: 4 };
   return Math.ceil(baseTokens * multiplier[complexity]);
