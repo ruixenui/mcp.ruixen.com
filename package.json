@@ -1,19 +1,51 @@
 {
-  "name": "ruixen-mcp",
-  "version": "0.1.0",
-  "private": true,
-  "workspaces": ["packages/*", "apps/*"],
+  "name": "@ruixen/mcp",
+  "version": "1.0.0",
+  "description": "Official MCP server for Ruixen UI",
+  "homepage": "https://ruixen.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ruixenui/mcp.ruixen.com.git"
+  },
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "mcp:dev": "pnpm --filter @ruixenui/mcp dev",
-    "mcp:build": "pnpm --filter @ruixenui/mcp build",
-    "web:dev": "pnpm --filter web dev",
-    "web:build": "pnpm --filter web build"
+    "build": "tsc && shx chmod +x dist/*.js",
+    "start": "node dist/server.js",
+    "dev": "nodemon --watch src --ext ts,json --exec \"npm run build\"",
+    "release": "release-it",
+    "release:dry-run": "release-it --dry-run"
+  },
+  "type": "module",
+  "main": "./dist/server.js",
+  "module": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "bin": {
+    "ultrathink": "./dist/server.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "UI",
+    "frontend",
+    "ruixen",
+    "ultrathink",
+    "component-builder"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
-    "turbo": "^2.0.0"
+    "@release-it/conventional-changelog": "^10.0.5",
+    "@types/node": "^22.14.1",
+    "nodemon": "^3.1.0",
+    "release-it": "^19.2.4",
+    "shx": "^0.4.0",
+    "typescript": "^5.8.3"
   },
-  "packageManager": "pnpm@9.0.0"
+  "author": "ruixen",
+  "license": "MIT"
 }
