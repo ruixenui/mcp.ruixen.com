@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Official MCP server for Ruixen UI.",
   "homepage": "https://ruixen.com",
+  "bugs": {
+    "url": "https://github.com/ruixenui/mcp.ruixen.com/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ruixenui/mcp.ruixen.com.git"
@@ -11,6 +14,9 @@
     "build": "tsc && shx chmod +x dist/*.js",
     "start": "node dist/server.js",
     "dev": "nodemon --watch src --ext ts,json --exec \"npm run build\"",
+    "pretest": "npm run build",
+    "test": "node --test test/smoke.test.mjs",
+    "prepublishOnly": "npm run build && npm test",
     "release": "release-it",
     "release:dry-run": "release-it --dry-run"
   },
@@ -35,6 +41,9 @@
     "components",
     "registry"
   ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "zod": "^3.25.0"

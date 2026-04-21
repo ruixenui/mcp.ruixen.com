@@ -1,24 +1,13 @@
 # @ruixen/mcp
 
 [![npm version](https://img.shields.io/npm/v/%40ruixen%2Fmcp.svg)](https://www.npmjs.com/package/@ruixen/mcp)
+[![CI](https://github.com/ruixenui/mcp.ruixen.com/actions/workflows/ci.yml/badge.svg)](https://github.com/ruixenui/mcp.ruixen.com/actions/workflows/ci.yml)
 
-Official ModelContextProtocol (MCP) server for [Ruixen UI](https://ruixen.com/).
+Official [Model Context Protocol](https://modelcontextprotocol.io/) server for [Ruixen UI](https://ruixen.com/).
 
-## Install MCP configuration
+The server reads directly from the live [Ruixen registry](https://ruixen.com/registry.json), so the components your AI assistant can reach are always in sync with what's on ruixen.com.
 
-```bash
-npx @ruixen/cli@latest install <client>
-```
-
-### Supported Clients
-
-- [x] cursor
-- [x] windsurf
-- [x] claude
-- [x] cline
-- [x] roo-cline
-
-## Manual Installation
+## Installation
 
 Add to your IDE's MCP config:
 
@@ -33,9 +22,11 @@ Add to your IDE's MCP config:
 }
 ```
 
+Works with any MCP-compatible client — Cursor, Claude Desktop, Windsurf, Cline, Roo-Cline, and VS Code (with an MCP extension). Each client stores this config in its own settings file; consult your client's docs for the exact location.
+
 ## Example Usage
 
-Once configured, you can ask questions like:
+Once configured, ask your AI assistant things like:
 
 > "Make a marquee of logos"
 
@@ -45,19 +36,23 @@ Once configured, you can ask questions like:
 
 > "Show me button components with spring animations"
 
+The assistant calls the MCP tools below to discover components, pull their source, and hand you the exact `npx shadcn@latest add …` command to install each one into your project.
+
 ## Available Tools
 
-The server provides the following tools callable via MCP:
+| Tool | Description |
+|---|---|
+| `listRegistryItems` | List registry items with optional `kind`, `query`, `limit`, and `offset` filters. Good for broad browsing. |
+| `searchRegistryItems` | Keyword search across names, titles, descriptions, and registry types, ranked by relevance. Good when you know roughly what you want. |
+| `getRegistryItem` | Item detail for a specific component. Optionally includes `source`, `examples`, and `relatedItems`. |
 
-| Tool Name       | Description                                                                                                                                                                                                                                                                                                                                                                                             |
-|-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `listRegistryItems` | Lists Ruixen UI registry items with optional filters like `kind`, `query`, `limit`, and `offset`. Recommended for registry browsing. |
-| `searchRegistryItems` | Searches Ruixen UI registry items by keyword across names, titles, descriptions, and registry types, with pagination support. |
-| `getRegistryItem` | Returns details for a single registry item, including install instructions and optional source, related items, and examples. |
+## Development
 
-## MCP Limitations
-
-Some clients have a [limit](https://docs.cursor.com/context/model-context-protocol#limitations) on the number of tools they can call. The server keeps a small generic tool surface and reads directly from the live Ruixen UI registry, rather than relying on hardcoded category buckets.
+```bash
+npm install
+npm run build   # tsc + chmod
+npm test        # runs the live-registry smoke test (requires internet)
+```
 
 ## License
 
