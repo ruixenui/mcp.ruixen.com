@@ -64,7 +64,7 @@ test("MCP server boots and serves Ruixen UI registry data", async (t) => {
     clientInfo: { name: "smoke", version: "0" },
   });
   assert.equal(init.result.serverInfo.name, "Ruixen UI MCP");
-  assert.equal(init.result.serverInfo.version, "1.0.0");
+  assert.equal(init.result.serverInfo.version, "1.0.1");
 
   notify("notifications/initialized", {});
 

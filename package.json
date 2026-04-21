@@ -1,6 +1,6 @@
 {
   "name": "@ruixen/mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official MCP server for Ruixen UI.",
   "homepage": "https://ruixen.com",
   "bugs": {
@@ -25,6 +25,7 @@
   "module": "./dist/server.js",
   "types": "./dist/server.d.ts",
   "bin": {
+    "mcp": "./dist/server.js",
     "ruixen-mcp": "./dist/server.js"
   },
   "files": [

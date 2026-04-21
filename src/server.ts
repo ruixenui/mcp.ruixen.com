@@ -6,7 +6,7 @@ import { registerGenericTools } from "./tools/register-generic-tools.js";
 
 const server = new McpServer({
   name: "Ruixen UI MCP",
-  version: "1.0.0",
+  version: "1.0.1",
 });
 
 registerGenericTools(server);
