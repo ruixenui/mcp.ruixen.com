@@ -12,7 +12,22 @@ import {
   fetchRegistryItemDetails,
   parseExampleComponents,
 } from "../registry/client.js";
-import { formatComponentName, formatDisplayName } from "../utils/formatters.js";
+import {
+  formatComponentName,
+  formatDisplayName,
+} from "../utils/formatters.js";
+import { formatSearchString } from "../utils/search.js";
+import type {
+  BuildFilesSourceOptions,
+  FilterCatalogParams,
+  GetRegistryItemOptions,
+  ListRegistryItemsParams,
+  ListRegistryItemsResult,
+  PaginateItemsParams,
+  PaginateItemsResult,
+  SearchRegistryItemsParams,
+  SearchRegistryItemsResult,
+} from "./types.js";
 
 const DEFAULT_RESULT_LIMIT = 25;
 const MAX_RESULT_LIMIT = 150;
@@ -53,26 +68,15 @@ export class RegistryService {
     }
   }
 
-  async listRegistryItems(options?: {
-    kind?: string;
-    query?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<{
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-    nextOffset?: number;
-    availableKinds: string[];
-    items: RegistryCatalogItem[];
-  }> {
+  async listRegistryItems(
+    options?: ListRegistryItemsParams,
+  ): ListRegistryItemsResult {
     const snapshot = await this.createSnapshot();
     const catalog = this.buildCatalog(snapshot);
-    const filteredCatalog = this.filterCatalog(catalog, options);
-    const page = this.paginateItems(filteredCatalog, options);
+    const filteredCatalog = this.filterCatalog({ catalog, options });
+    const page = this.paginateItems({ items: filteredCatalog, options });
 
-    return {
+    const result: Awaited<ListRegistryItemsResult> = {
       total: filteredCatalog.length,
       limit: page.limit,
       offset: page.offset,
@@ -81,28 +85,19 @@ export class RegistryService {
       availableKinds: this.getAvailableKinds(catalog),
       items: page.items,
     };
+
+    return result;
   }
 
-  async searchRegistryItems(options: {
-    query: string;
-    kind?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<{
-    query: string;
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-    nextOffset?: number;
-    availableKinds: string[];
-    items: RegistryCatalogItem[];
-  }> {
+  async searchRegistryItems(
+    options: SearchRegistryItemsParams,
+  ): SearchRegistryItemsResult {
     const snapshot = await this.createSnapshot();
     const catalog = this.buildCatalog(snapshot);
     const query = options.query.trim();
-    const filteredCatalog = this.filterCatalog(catalog, {
-      kind: options.kind,
+    const filteredCatalog = this.filterCatalog({
+      catalog,
+      options: { kind: options.kind },
     });
 
     const rankedItems = filteredCatalog
@@ -119,7 +114,7 @@ export class RegistryService {
         return left.item.name.localeCompare(right.item.name);
       })
       .map((entry) => entry.item);
-    const page = this.paginateItems(rankedItems, options);
+    const page = this.paginateItems({ items: rankedItems, options });
 
     return {
       query,
@@ -135,11 +130,7 @@ export class RegistryService {
 
   async getRegistryItem(
     name: string,
-    options?: {
-      includeSource?: boolean;
-      includeExamples?: boolean;
-      includeRelated?: boolean;
-    },
+    options?: GetRegistryItemOptions,
   ): Promise<RegistryCatalogItemDetail> {
     const snapshot = await this.createSnapshot();
     const catalog = this.buildCatalog(snapshot);
@@ -249,13 +240,10 @@ export class RegistryService {
     }));
   }
 
-  private filterCatalog(
-    catalog: RegistryCatalogItem[],
-    options?: {
-      kind?: string;
-      query?: string;
-    },
-  ): RegistryCatalogItem[] {
+  private filterCatalog({
+    catalog,
+    options,
+  }: FilterCatalogParams): RegistryCatalogItem[] {
     const normalizedKind = options?.kind?.trim().toLowerCase();
     const normalizedQuery = options?.query?.trim().toLowerCase();
     const queryTerms = this.tokenizeSearchWords(options?.query ?? "");
@@ -435,32 +423,25 @@ export class RegistryService {
     return Math.max(Math.trunc(offset), 0);
   }
 
-  private paginateItems<T>(
-    items: T[],
-    options?: {
-      limit?: number;
-      offset?: number;
-    },
-  ): {
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-    nextOffset?: number;
-    items: T[];
-  } {
+  private paginateItems<T>({
+    items,
+    options,
+  }: PaginateItemsParams<T>): PaginateItemsResult<T> {
     const limit = this.normalizeLimit(options?.limit);
     const offset = this.normalizeOffset(options?.offset);
     const paginatedItems = items.slice(offset, offset + limit);
     const nextOffset = offset + paginatedItems.length;
     const hasMore = nextOffset < items.length;
 
-    return {
+    const result: PaginateItemsResult<T> = {
       limit,
       offset,
       hasMore,
       nextOffset: hasMore ? nextOffset : undefined,
       items: paginatedItems,
     };
+
+    return result;
   }
 
   private getEntryDependencies(entries: RegistryEntry[], name: string): string[] {
@@ -484,8 +465,8 @@ export class RegistryService {
       item.kind === "component"
         ? snapshot.exampleNamesByComponent.get(item.name) ?? []
         : this.extractRegistryDependencyNames(
-            this.getEntryRegistryDependencies(snapshot.entries, item.name),
-          );
+          this.getEntryRegistryDependencies(snapshot.entries, item.name),
+        );
 
     return relatedNames.flatMap((relatedName) => {
       const relatedItem = catalogByName.get(relatedName);
@@ -506,16 +487,13 @@ export class RegistryService {
   }
 
   private tokenizeSearchValue(value: string): string[] {
-    const normalizedValue = value.trim().toLowerCase();
+    const formatted = formatSearchString(value);
 
-    if (!normalizedValue) {
+    if (!formatted) {
       return [];
     }
 
-    const rawTokens = normalizedValue
-      .split(/[^a-z0-9]+/)
-      .map((token) => token.trim())
-      .filter(Boolean);
+    const { normalizedValue, rawTokens } = formatted;
 
     const normalizedTokens = rawTokens.flatMap((token) => {
       const singularToken = this.toSingularToken(token);
@@ -529,19 +507,15 @@ export class RegistryService {
   }
 
   private tokenizeSearchWords(value: string): string[] {
-    const normalizedValue = value.trim().toLowerCase();
+    const formatted = formatSearchString(value);
 
-    if (!normalizedValue) {
+    if (!formatted) {
       return [];
     }
 
     return [
       ...new Set(
-        normalizedValue
-          .split(/[^a-z0-9]+/)
-          .map((token) => token.trim())
-          .filter(Boolean)
-          .map((token) => this.toSingularToken(token) ?? token),
+        formatted.rawTokens.map((token) => this.toSingularToken(token) ?? token),
       ),
     ];
   }
@@ -581,10 +555,6 @@ export class RegistryService {
 
     if (!normalizedDependency) {
       return undefined;
-    }
-
-    if (normalizedDependency.startsWith("@ruixen/")) {
-      return normalizedDependency.slice("@ruixen/".length) || undefined;
     }
 
     const componentNameMatch = normalizedDependency.match(
@@ -627,12 +597,7 @@ export class RegistryService {
     return source;
   }
 
-  private buildFilesSource(
-    files: Array<{
-      content: string;
-      path?: string;
-    }>,
-  ): string | undefined {
+  private buildFilesSource(files: BuildFilesSourceOptions): string | undefined {
     const source = files
       .map((file) => {
         const trimmedContent = file.content.trim();

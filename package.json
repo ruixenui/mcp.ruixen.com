@@ -1,7 +1,7 @@
 {
   "name": "@ruixen/mcp",
   "version": "1.0.0",
-  "description": "Official MCP server for Ruixen UI",
+  "description": "Official MCP server for Ruixen UI.",
   "homepage": "https://ruixen.com",
   "repository": {
     "type": "git",
@@ -19,7 +19,7 @@
   "module": "./dist/server.js",
   "types": "./dist/server.d.ts",
   "bin": {
-    "ultrathink": "./dist/server.js"
+    "ruixen-mcp": "./dist/server.js"
   },
   "files": [
     "dist"
@@ -27,12 +27,13 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "ai",
-    "UI",
-    "frontend",
     "ruixen",
-    "ultrathink",
-    "component-builder"
+    "ruixen-ui",
+    "shadcn",
+    "tailwind",
+    "ui",
+    "components",
+    "registry"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -46,6 +47,6 @@
     "shx": "^0.4.0",
     "typescript": "^5.8.3"
   },
-  "author": "ruixen",
+  "author": "Ruixen UI",
   "license": "MIT"
 }

@@ -11,10 +11,13 @@ export type RegistryExample = z.infer<typeof ExampleComponentSchema>;
 export type RegistryExampleDetail = z.infer<typeof ExampleDetailSchema>;
 export type RegistryItemDetail = z.infer<typeof RegistryItemDetailSchema>;
 
-export type RegistryCatalogItem = {
+type RegistryCatalogItemBase = {
   name: string;
   title: string;
   description?: string;
+}
+
+export type RegistryCatalogItem = RegistryCatalogItemBase & {
   kind: string;
   registryType: string;
 };
@@ -28,10 +31,7 @@ export type RegistryCatalogItemDetail = RegistryCatalogItem & {
   registryDependencies: string[];
   relatedItems?: RegistryCatalogItem[];
   source?: string;
-  examples?: Array<{
-    name: string;
-    title: string;
-    description?: string;
+  examples?: Array<RegistryCatalogItemBase & {
     content: string;
   }>;
 };

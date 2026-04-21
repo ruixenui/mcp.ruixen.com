@@ -1,4 +1,5 @@
 // Helper function to format component names
+
 export function formatComponentName(name: string): string {
   return name
     .split("-")

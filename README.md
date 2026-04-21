@@ -1,8 +1,8 @@
 # @ruixen/mcp
 
-Official ModelContextProtocol (MCP) server for [Ruixen UI](https://ruixen.com/).
+[![npm version](https://img.shields.io/npm/v/%40ruixen%2Fmcp.svg)](https://www.npmjs.com/package/@ruixen/mcp)
 
-Make your websites feel premium instantly with 170+ free, open-source React components built with Tailwind CSS, TypeScript, and Framer Motion.
+Official ModelContextProtocol (MCP) server for [Ruixen UI](https://ruixen.com/).
 
 ## Install MCP configuration
 
